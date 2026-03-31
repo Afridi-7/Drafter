@@ -1,198 +1,216 @@
 // src/components/Sidebar.tsx
 import React, { useState } from 'react'
 import {
-  FileText, Trash2, Download, Zap, ChevronRight,
-  RefreshCw, BookOpen, Settings
+  Feather, Zap, Download, Trash2, ChevronRight,
+  FileText, File, FileType, BookOpen, RotateCcw, RotateCw,
 } from 'lucide-react'
-import { QUICK_ACTIONS } from '../hooks/useStore'
+import clsx from 'clsx'
+
+const QUICK_ACTIONS = [
+  { emoji: '📝', label: 'New draft',       prompt: 'Write a professional draft for me' },
+  { emoji: '✨', label: 'Improve writing', prompt: 'Improve the writing quality and flow' },
+  { emoji: '📏', label: 'Make concise',    prompt: 'Make the document more concise' },
+  { emoji: '🔍', label: 'Fix grammar',     prompt: 'Fix all grammar and spelling issues' },
+  { emoji: '💡', label: 'Add examples',    prompt: 'Add concrete examples to support the content' },
+  { emoji: '📊', label: 'Show stats',      prompt: 'Show document statistics' },
+]
+
+const FORMATS = [
+  { value: 'md',   label: 'Markdown',  ext: '.md',   icon: FileText },
+  { value: 'txt',  label: 'Plain Text',ext: '.txt',  icon: File     },
+  { value: 'docx', label: 'Word',      ext: '.docx', icon: FileType },
+  { value: 'pdf',  label: 'PDF',       ext: '.pdf',  icon: BookOpen },
+]
 
 interface SidebarProps {
   documentTitle: string
-  undoCount: number
-  redoCount: number
+  undoCount:     number
+  redoCount:     number
   lastSavedPath: string
+  loading:       boolean
   onTitleChange: (t: string) => void
   onQuickAction: (prompt: string) => void
-  onSave: (format: string) => void
-  onNewSession: () => void
-  loading: boolean
+  onSave:        (format: string) => void
+  onNewSession:  () => void
+  onUndo:        () => void
+  onRedo:        () => void
 }
 
-const FORMATS = [
-  { value: 'md', label: 'Markdown', ext: '.md', icon: '📄' },
-  { value: 'txt', label: 'Plain Text', ext: '.txt', icon: '📃' },
-  { value: 'docx', label: 'Word Document', ext: '.docx', icon: '📝' },
-]
-
 export default function Sidebar({
-  documentTitle,
-  undoCount,
-  redoCount,
-  lastSavedPath,
-  onTitleChange,
-  onQuickAction,
-  onSave,
-  onNewSession,
-  loading,
+  documentTitle, undoCount, redoCount, lastSavedPath,
+  loading, onTitleChange, onQuickAction, onSave, onNewSession,
+  onUndo, onRedo,
 }: SidebarProps) {
-  const [saveFormat, setSaveFormat] = useState('md')
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft, setTitleDraft] = useState(documentTitle)
+  const [saveFormat,    setSaveFormat]    = useState('md')
+  const [editingTitle,  setEditingTitle]  = useState(false)
+  const [titleDraft,    setTitleDraft]    = useState(documentTitle)
 
   const commitTitle = () => {
-    onTitleChange(titleDraft.trim() || 'Untitled Document')
+    const val = titleDraft.trim() || 'Untitled Document'
+    onTitleChange(val)
     setEditingTitle(false)
   }
 
   return (
-    <aside className="w-64 shrink-0 bg-gradient-to-b from-ink-950 to-ink-900 flex flex-col h-full overflow-hidden border-r border-white/5">
-      {/* Logo with gradient accent */}
-      <div className="px-5 pt-6 pb-5 border-b border-white/5 bg-gradient-to-r from-transparent to-blue-600/5">
-        <div className="flex items-center gap-2.5 mb-1 group">
-          <span className="text-2xl group-hover:animate-bounce-gentle transition-all">✍️</span>
-          <div>
-            <span className="font-display text-xl bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent tracking-tight">Drafter</span>
-            <p className="text-xs text-ink-400 font-body">AI writing assistant</p>
+    <aside
+      className="w-[220px] shrink-0 flex flex-col h-full overflow-hidden"
+      style={{ background: 'var(--surface2)', borderRight: '1px solid var(--border)' }}
+    >
+      {/* Logo */}
+      <div className="px-4 pt-5 pb-4">
+        <div className="flex items-center gap-2.5 mb-0.5">
+          <div
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.3)' }}
+          >
+            <Feather size={14} style={{ color: '#a78bfa' }} />
           </div>
+          <span className="font-serif italic text-lg" style={{ color: 'var(--text1)' }}>
+            Drafter
+          </span>
         </div>
+        <p className="text-xs pl-9" style={{ color: 'var(--text3)' }}>AI writing assistant</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-5">
-        {/* Document title */}
-        <section>
-          <div className="flex items-center gap-2 px-2 mb-3">
-            <FileText size={12} className="text-blue-400" />
-            <span className="text-xs font-semibold text-ink-300 uppercase tracking-wider">Document</span>
-          </div>
+      <div
+        className="flex-1 overflow-y-auto pb-3"
+        style={{ '--scrollbar-width': '3px' } as React.CSSProperties}
+      >
+
+        {/* ── Document ── */}
+        <div className="px-3 mb-4">
+          <p className="sidebar-label mb-2">Document</p>
+
           {editingTitle ? (
-            <div className="px-1">
-              <input
-                autoFocus
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={commitTitle}
-                onKeyDown={(e) => e.key === 'Enter' && commitTitle()}
-                className="w-full bg-white/10 text-white text-sm px-3 py-2.5 rounded-lg
-                           border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400
-                           placeholder:text-ink-400 transition-all duration-200"
-                placeholder="Document title..."
-              />
-            </div>
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={e => e.key === 'Enter' && commitTitle()}
+              className="input text-xs py-2"
+              placeholder="Document title…"
+            />
           ) : (
             <button
               onClick={() => { setTitleDraft(documentTitle); setEditingTitle(true) }}
-              className="w-full text-left px-3 py-2.5 rounded-lg bg-white/5 hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-purple-500/10
-                         transition-all duration-200 group flex items-center justify-between border border-white/5 hover:border-blue-500/20"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left group"
+              style={{
+                background: 'var(--surface3)',
+                border: '1px solid var(--border)',
+                color: 'var(--text2)',
+              }}
             >
-              <span className="text-sm text-white/80 truncate">{documentTitle}</span>
-              <ChevronRight size={12} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="truncate pr-2">{documentTitle}</span>
+              <ChevronRight size={10} style={{ color: 'var(--text3)', flexShrink: 0 }} />
             </button>
           )}
 
-          {/* History indicators */}
-          <div className="flex gap-2 px-1 mt-2.5 flex-wrap">
-            {undoCount > 0 && (
-              <span className="text-xs text-emerald-400 bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 px-2.5 py-1 rounded-full border border-emerald-400/20">
-                ↩️ {undoCount} undo
-              </span>
-            )}
-            {redoCount > 0 && (
-              <span className="text-xs text-cyan-400 bg-gradient-to-r from-cyan-500/10 to-cyan-500/5 px-2.5 py-1 rounded-full border border-cyan-400/20">
-                ↪️ {redoCount} redo
-              </span>
-            )}
+          {/* Undo / Redo row */}
+          <div className="flex gap-1.5 mt-2">
+            <button
+              onClick={onUndo}
+              disabled={undoCount === 0 || loading}
+              className="btn-ghost flex-1 text-xs py-1.5"
+              title="Undo"
+            >
+              <RotateCcw size={11} />
+              {undoCount > 0 && <span>{undoCount}</span>}
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={redoCount === 0 || loading}
+              className="btn-ghost flex-1 text-xs py-1.5"
+              title="Redo"
+            >
+              <RotateCw size={11} />
+              {redoCount > 0 && <span>{redoCount}</span>}
+            </button>
           </div>
-        </section>
+        </div>
 
-        {/* Divider */}
-        <div className="section-divider" />
+        {/* ── Divider ── */}
+        <div className="mx-3 mb-4" style={{ height: '1px', background: 'var(--border)' }} />
 
-        {/* Quick actions */}
-        <section>
-          <div className="flex items-center gap-2 px-2 mb-3">
-            <Zap size={12} className="text-amber-accent" />
-            <span className="text-xs font-semibold text-ink-300 uppercase tracking-wider">Quick Actions</span>
+        {/* ── Quick Actions ── */}
+        <div className="px-3 mb-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Zap size={10} style={{ color: 'var(--text3)' }} />
+            <p className="sidebar-label">Quick actions</p>
           </div>
-          <div className="space-y-1">
-            {QUICK_ACTIONS.map((action) => (
+          <div className="space-y-0.5">
+            {QUICK_ACTIONS.map(a => (
               <button
-                key={action.label}
-                onClick={() => onQuickAction(action.prompt)}
+                key={a.label}
+                onClick={() => onQuickAction(a.prompt)}
                 disabled={loading}
-                className="sidebar-item text-left hover:from-purple-500/15 hover:to-blue-500/15"
+                className="nav-item"
               >
-                <span className="text-base leading-none">{action.icon}</span>
-                <span className="text-sm font-medium">{action.label}</span>
+                <span className="text-sm leading-none">{a.emoji}</span>
+                <span>{a.label}</span>
               </button>
             ))}
           </div>
-        </section>
+        </div>
 
-        {/* Divider */}
-        <div className="section-divider" />
+        {/* ── Divider ── */}
+        <div className="mx-3 mb-4" style={{ height: '1px', background: 'var(--border)' }} />
 
-        {/* Save */}
-        <section>
-          <div className="flex items-center gap-2 px-2 mb-3">
-            <Download size={12} className="text-emerald-400" />
-            <span className="text-xs font-semibold text-ink-300 uppercase tracking-wider">Export</span>
+        {/* ── Export ── */}
+        <div className="px-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Download size={10} style={{ color: 'var(--text3)' }} />
+            <p className="sidebar-label">Export</p>
           </div>
 
-          <div className="space-y-1.5 px-1">
-            {FORMATS.map((fmt) => (
-              <label
-                key={fmt.value}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all
-                  ${saveFormat === fmt.value
-                    ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-blue-400/40'
-                    : 'text-ink-300 hover:bg-gradient-to-r hover:from-white/8 hover:to-white/5 hover:text-white border border-white/5 hover:border-white/10'
-                  }`}
-              >
-                <input
-                  type="radio"
-                  name="format"
-                  value={fmt.value}
-                  checked={saveFormat === fmt.value}
-                  onChange={() => setSaveFormat(fmt.value)}
-                  className="sr-only"
-                />
-                <span className="text-lg">{fmt.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold">{fmt.label}</div>
-                  <div className="text-xs text-ink-400">{fmt.ext}</div>
-                </div>
-                {saveFormat === fmt.value && (
-                  <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-400" />
-                )}
-              </label>
-            ))}
-
-            <button
-              onClick={() => onSave(saveFormat)}
-              disabled={loading}
-              className="btn-accent w-full mt-3"
-            >
-              <Download size={14} />
-              Save & Download
-            </button>
-
-            {lastSavedPath && (
-              <p className="text-xs text-emerald-400 px-1 mt-2 truncate flex items-center gap-1">
-                <span>✓</span> {lastSavedPath.split('/').pop()}
-              </p>
-            )}
+          <div className="space-y-1.5 mb-3">
+            {FORMATS.map(fmt => {
+              const Icon = fmt.icon
+              return (
+                <label
+                  key={fmt.value}
+                  className={clsx('format-card', saveFormat === fmt.value && 'selected')}
+                  onClick={() => setSaveFormat(fmt.value)}
+                >
+                  <div className="radio-dot" />
+                  <Icon size={13} style={{ color: saveFormat === fmt.value ? '#a78bfa' : 'var(--text3)', flexShrink: 0 }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium" style={{ color: saveFormat === fmt.value ? '#ede9fe' : 'var(--text2)' }}>
+                      {fmt.label}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text3)' }}>{fmt.ext}</div>
+                  </div>
+                </label>
+              )
+            })}
           </div>
-        </section>
+
+          <button
+            onClick={() => onSave(saveFormat)}
+            disabled={loading}
+            className="btn-primary w-full text-xs py-2.5"
+          >
+            <Download size={12} />
+            Save & Download
+          </button>
+
+          {lastSavedPath && (
+            <p className="text-xs mt-2 truncate" style={{ color: '#34d399' }}>
+              ✓ {lastSavedPath.split('/').pop()}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Bottom actions */}
-      <div className="border-t border-white/5 p-3 space-y-1">
+      {/* ── Bottom ── */}
+      <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
         <button
           onClick={onNewSession}
-          className="sidebar-item w-full text-rose-400 hover:text-rose-300 hover:from-rose-500/15 hover:to-rose-500/10 hover:border-rose-500/20"
+          className="nav-item w-full"
+          style={{ color: '#f87171' }}
         >
-          <RefreshCw size={14} />
-          <span>New Session</span>
+          <Trash2 size={13} />
+          <span>New session</span>
         </button>
       </div>
     </aside>

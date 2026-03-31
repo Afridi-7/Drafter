@@ -229,7 +229,7 @@ def save_document(filename: str, format: str = "md") -> str:
 
     Args:
         filename: Base name for the file (no extension).
-        format: 'txt', 'md', or 'docx'. Default is 'md'.
+        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'.
     """
     ctx = _ctx()
     content = ctx["document_content"]
@@ -240,7 +240,7 @@ def save_document(filename: str, format: str = "md") -> str:
         f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
     fmt = format.lower().lstrip(".")
-    if fmt not in ("txt", "md", "docx"):
+    if fmt not in ("txt", "md", "docx", "pdf"):
         fmt = "md"
 
     filepath = OUTPUT_DIR / f"{safe}.{fmt}"
@@ -258,6 +258,63 @@ def save_document(filename: str, format: str = "md") -> str:
             fmt = "md"
             filepath = OUTPUT_DIR / f"{safe}.{fmt}"
             filepath.write_text(content, encoding="utf-8")
+
+    elif fmt == "pdf":
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.lib import colors
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.enums import TA_LEFT
+
+            doc_pdf = SimpleDocTemplate(
+                str(filepath),
+                pagesize=A4,
+                leftMargin=2.5*cm, rightMargin=2.5*cm,
+                topMargin=2.5*cm, bottomMargin=2.5*cm,
+            )
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "DocTitle", parent=styles["Heading1"],
+                fontSize=20, spaceAfter=18, textColor=colors.HexColor("#0d0d0d"),
+            )
+            body_style = ParagraphStyle(
+                "DocBody", parent=styles["Normal"],
+                fontSize=11, leading=18, spaceAfter=10,
+                textColor=colors.HexColor("#1a1a1a"),
+            )
+            h2_style = ParagraphStyle(
+                "DocH2", parent=styles["Heading2"],
+                fontSize=14, spaceAfter=8, spaceBefore=14,
+                textColor=colors.HexColor("#111111"),
+            )
+
+            story = [Paragraph(ctx["document_title"], title_style)]
+            for line in content.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    story.append(Spacer(1, 6))
+                elif stripped.startswith("## "):
+                    story.append(Paragraph(stripped[3:], h2_style))
+                elif stripped.startswith("# "):
+                    story.append(Paragraph(stripped[2:], title_style))
+                else:
+                    # strip basic markdown bold/italic for PDF
+                    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", stripped)
+                    clean = re.sub(r"\*(.+?)\*", r"\1", clean)
+                    story.append(Paragraph(clean, body_style))
+
+            doc_pdf.build(story)
+        except ImportError:
+            fmt = "md"
+            filepath = OUTPUT_DIR / f"{safe}.{fmt}"
+            filepath.write_text(content, encoding="utf-8")
+            return (
+                "⚠️ reportlab not installed — saved as Markdown instead.\n"
+                f"   Path: {filepath}\n"
+                "Install with: pip install reportlab"
+            )
     else:
         filepath.write_text(content, encoding="utf-8")
 
@@ -361,7 +418,7 @@ AVAILABLE TOOLS:
 • undo_last_change      → Step back one version
 • redo_last_change      → Step forward one version
 • get_document_stats    → Word count, reading time, etc.
-• save_document         → Save as .txt, .md, or .docx
+• save_document         → Save as .txt, .md, .docx, or .pdf
 
 RULES:
 1. Always use the most targeted tool (prefer replace_section over full rewrites).

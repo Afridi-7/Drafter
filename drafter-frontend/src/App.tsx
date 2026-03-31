@@ -1,24 +1,32 @@
 // src/App.tsx
 import React, { useEffect, useState } from 'react'
-import Sidebar from './components/Sidebar'
-import ChatPanel from './components/ChatPanel'
-import DocumentPanel from './components/DocumentPanel'
-import { useStore } from './hooks/useStore'
-import { Loader2, Wifi, WifiOff } from 'lucide-react'
+import Sidebar        from './components/Sidebar'
+import ChatPanel      from './components/ChatPanel'
+import DocumentPanel  from './components/DocumentPanel'
+import { useStore }   from './hooks/useStore'
+import { Loader2, WifiOff, MessageSquare, FileText } from 'lucide-react'
 import clsx from 'clsx'
 
-type ActivePanel = 'chat' | 'document'
+type Panel = 'chat' | 'document'
 
 function LoadingScreen() {
   return (
-    <div className="fixed inset-0 bg-parchment flex flex-col items-center justify-center">
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-4xl">✍️</span>
-        <span className="font-display text-3xl text-ink-900 tracking-tight">Drafter</span>
+    <div
+      className="fixed inset-0 flex flex-col items-center justify-center"
+      style={{ background: 'var(--surface)' }}
+    >
+      <div className="flex items-center gap-3 mb-5">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center"
+          style={{ background: 'rgba(124,58,237,0.18)', border: '1px solid rgba(124,58,237,0.3)' }}
+        >
+          <span className="text-xl">✍️</span>
+        </div>
+        <span className="font-serif italic text-2xl" style={{ color: 'var(--text1)' }}>Drafter</span>
       </div>
-      <div className="flex items-center gap-2 text-ink-400 text-sm">
-        <Loader2 size={14} className="animate-spin" />
-        <span>Connecting to backend…</span>
+      <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text3)' }}>
+        <Loader2 size={13} className="anim-spin" />
+        Connecting to backend…
       </div>
     </div>
   )
@@ -26,89 +34,103 @@ function LoadingScreen() {
 
 function ErrorScreen({ message }: { message: string }) {
   return (
-    <div className="fixed inset-0 bg-parchment flex flex-col items-center justify-center px-8">
-      <WifiOff size={40} className="text-crimson mb-4" />
-      <h2 className="font-display text-xl text-ink-900 mb-2">Connection Failed</h2>
-      <p className="text-sm text-ink-500 text-center max-w-sm leading-relaxed mb-6">{message}</p>
-      <button
-        onClick={() => window.location.reload()}
-        className="btn-primary"
+    <div
+      className="fixed inset-0 flex flex-col items-center justify-center px-8 text-center"
+      style={{ background: 'var(--surface)' }}
+    >
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+        style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)' }}
       >
-        Retry
+        <WifiOff size={24} style={{ color: '#fb7185' }} />
+      </div>
+      <h2 className="font-serif italic text-xl mb-2" style={{ color: 'var(--text1)' }}>
+        Connection Failed
+      </h2>
+      <p className="text-sm mb-6 max-w-sm leading-relaxed" style={{ color: 'var(--text3)' }}>
+        {message}
+      </p>
+      <button onClick={() => window.location.reload()} className="btn-primary">
+        Try again
       </button>
     </div>
   )
 }
 
 export default function App() {
-  const { state, initialize, sendMessage, setTitle, resetSession, clearError } = useStore()
-  const [activePanel, setActivePanel] = useState<ActivePanel>('chat')
-  const [pendingInput, setPendingInput] = useState<string | undefined>()
+  const { state, initialize, sendMessage, setTitle, handleUndo, handleRedo, resetSession, clearError } = useStore()
+  const [activePanel, setActivePanel] = useState<Panel>('chat')
 
-  useEffect(() => {
-    initialize()
-  }, [initialize])
+  useEffect(() => { initialize() }, [initialize])
 
   const handleQuickAction = (prompt: string) => {
-    setPendingInput(prompt)
     setActivePanel('chat')
-    // Clear after a tick so it triggers the effect in ChatPanel
-    setTimeout(() => setPendingInput(undefined), 100)
     sendMessage(prompt)
   }
 
   const handleSave = (format: string) => {
-    const safeName = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
-    sendMessage(`Save the document as '${safeName}' in ${format} format`)
+    const safe = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
+    sendMessage(`Save the document as '${safe}' in ${format} format`)
   }
 
   if (state.initializing) return <LoadingScreen />
   if (state.error && !state.sessionId) return <ErrorScreen message={state.error} />
 
   return (
-    <div className="flex h-screen overflow-hidden bg-parchment">
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface)' }}>
+
       {/* Sidebar */}
       <Sidebar
         documentTitle={state.documentTitle}
         undoCount={state.undoCount}
         redoCount={state.redoCount}
         lastSavedPath={state.lastSavedPath}
+        loading={state.loading}
         onTitleChange={setTitle}
         onQuickAction={handleQuickAction}
         onSave={handleSave}
         onNewSession={resetSession}
-        loading={state.loading}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
 
-      {/* Main content */}
+      {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
+
         {/* Mobile tab bar */}
-        <div className="lg:hidden flex border-b border-parchment-border bg-white/50">
-          {(['chat', 'document'] as ActivePanel[]).map((panel) => (
+        <div
+          className="lg:hidden flex"
+          style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}
+        >
+          {(['chat', 'document'] as Panel[]).map(p => (
             <button
-              key={panel}
-              onClick={() => setActivePanel(panel)}
-              className={clsx(
-                'flex-1 py-3 text-sm font-medium capitalize transition-all',
-                activePanel === panel
-                  ? 'text-ink-900 border-b-2 border-ink-900'
-                  : 'text-ink-400'
-              )}
+              key={p}
+              onClick={() => setActivePanel(p)}
+              className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium capitalize transition-all"
+              style={{
+                color: activePanel === p ? '#a78bfa' : 'var(--text3)',
+                borderBottom: activePanel === p ? '2px solid #7c3aed' : '2px solid transparent',
+              }}
             >
-              {panel === 'chat' ? '💬 Chat' : '📄 Document'}
+              {p === 'chat'
+                ? <><MessageSquare size={14} /> Chat</>
+                : <><FileText size={14} /> Document</>
+              }
             </button>
           ))}
         </div>
 
-        {/* Desktop split view */}
+        {/* Split panes */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Chat panel */}
+
+          {/* Chat pane */}
           <div
             className={clsx(
-              'flex flex-col border-r border-parchment-border bg-parchment/50',
-              'lg:flex lg:w-[45%]',
+              'flex flex-col',
+              'lg:flex lg:w-[44%]',
               activePanel === 'chat' ? 'flex w-full' : 'hidden'
             )}
+            style={{ borderRight: '1px solid var(--border)' }}
           >
             <ChatPanel
               messages={state.chatMessages}
@@ -116,14 +138,13 @@ export default function App() {
               error={state.error}
               onSend={sendMessage}
               onClearError={clearError}
-              pendingInput={pendingInput}
             />
           </div>
 
-          {/* Document panel */}
+          {/* Document pane */}
           <div
             className={clsx(
-              'flex flex-col bg-white',
+              'flex flex-col',
               'lg:flex lg:flex-1',
               activePanel === 'document' ? 'flex w-full' : 'hidden'
             )}
@@ -138,31 +159,34 @@ export default function App() {
         </div>
 
         {/* Status bar */}
-        <div className="hidden lg:flex items-center justify-between
-                        px-4 py-1.5 bg-ink-950 text-xs text-ink-400
-                        border-t border-white/5">
+        <div
+          className="hidden lg:flex items-center justify-between px-5 py-1.5 text-[11px]"
+          style={{
+            background: 'var(--surface2)',
+            borderTop: '1px solid var(--border)',
+            color: 'var(--text3)',
+          }}
+        >
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className={clsx(
-                'status-dot',
-                state.sessionId ? 'bg-jade' : 'bg-crimson'
-              )} />
-              <span>{state.sessionId ? 'Connected' : 'Disconnected'}</span>
-            </div>
+            <span className="flex items-center gap-1.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: state.sessionId ? '#34d399' : '#f87171' }}
+              />
+              {state.sessionId ? 'Connected' : 'Disconnected'}
+            </span>
             {state.sessionId && (
-              <span className="text-ink-600 font-mono">
-                {state.sessionId.slice(0, 8)}…
-              </span>
+              <span className="font-mono opacity-40">{state.sessionId.slice(0, 8)}…</span>
             )}
           </div>
           <div className="flex items-center gap-3">
             {state.loading && (
-              <span className="flex items-center gap-1.5 text-amber-accent">
-                <Loader2 size={10} className="animate-spin" />
+              <span className="flex items-center gap-1.5" style={{ color: '#a78bfa' }}>
+                <Loader2 size={10} className="anim-spin" />
                 Processing…
               </span>
             )}
-            <span>Drafter v2.0</span>
+            <span className="opacity-40">Drafter v2.0</span>
           </div>
         </div>
       </div>
