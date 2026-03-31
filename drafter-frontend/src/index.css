@@ -36,6 +36,10 @@
     @apply bg-white/80 backdrop-blur-sm border border-parchment-border rounded-xl shadow-sm;
   }
 
+  .glass-panel-dark {
+    @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl;
+  }
+
   .doc-surface {
     background: #ffffff;
     background-image:
@@ -45,16 +49,18 @@
 
   .tool-badge {
     @apply inline-flex items-center gap-1 text-xs font-mono font-medium
-           px-2 py-0.5 rounded-md
-           bg-amber-soft text-amber-accent border border-amber-accent/20;
+           px-2.5 py-1 rounded-full
+           bg-gradient-to-r from-blue-500/15 to-purple-500/15 text-blue-600 border border-blue-300/30
+           hover:border-blue-300/60 transition-all duration-200;
   }
 
   .btn-primary {
     @apply flex items-center justify-center gap-2
-           bg-ink-900 text-parchment
+           bg-gradient-to-r from-ink-900 to-ink-800 text-parchment
            px-4 py-2 rounded-lg text-sm font-medium
-           hover:bg-ink-800 active:bg-ink-950
-           transition-all duration-150
+           hover:shadow-lg hover:shadow-ink-900/30 hover:from-ink-800 hover:to-ink-700
+           active:from-ink-950 active:to-ink-900
+           transition-all duration-200
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
@@ -63,45 +69,57 @@
            bg-transparent text-ink-600
            px-3 py-2 rounded-lg text-sm
            border border-parchment-border
-           hover:bg-parchment-dark hover:text-ink-900
+           hover:bg-gradient-to-br hover:from-parchment hover:to-parchment-dark hover:text-ink-900 hover:border-ink-300
            active:bg-parchment-border
-           transition-all duration-150
+           transition-all duration-200
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-accent {
+    @apply flex items-center justify-center gap-2
+           bg-gradient-to-r from-amber-accent to-amber-accent/80 text-white
+           px-4 py-2 rounded-lg text-sm font-medium
+           hover:shadow-lg hover:shadow-amber-accent/30
+           active:opacity-90
+           transition-all duration-200
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
     @apply flex items-center justify-center gap-1.5
            text-ink-400 text-xs px-2 py-1.5 rounded-md
-           hover:bg-parchment-dark hover:text-ink-700
-           transition-all duration-150;
+           hover:bg-parchment-dark hover:text-ink-700 hover:shadow-sm
+           transition-all duration-200;
   }
 
   .input-field {
     @apply w-full bg-white border border-parchment-border rounded-lg
            px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400
-           focus:outline-none focus:ring-2 focus:ring-ink-900/10 focus:border-ink-700
-           transition-all duration-150;
+           focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500
+           transition-all duration-200;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-2.5 w-full px-3 py-2 rounded-lg
+    @apply flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg
            text-sm text-ink-200/80
-           hover:bg-white/10 hover:text-white
-           transition-all duration-150 cursor-pointer;
+           hover:bg-gradient-to-r hover:from-white/15 hover:to-white/5 hover:text-white
+           transition-all duration-200 cursor-pointer;
   }
 
   .chat-bubble-user {
-    @apply bg-ink-900 text-parchment
+    @apply bg-gradient-to-br from-ink-900 to-ink-800 text-parchment
            rounded-2xl rounded-br-sm
            px-4 py-3 text-sm leading-relaxed
-           ml-8 shadow-sm;
+           ml-8 shadow-lg shadow-ink-900/20
+           hover:shadow-xl hover:shadow-ink-900/30 transition-all duration-200;
   }
 
   .chat-bubble-ai {
-    @apply bg-white border border-parchment-border
+    @apply bg-white border border-parchment-border/60
            rounded-2xl rounded-bl-sm
            px-4 py-3 text-sm leading-relaxed
-           mr-8 shadow-sm;
+           mr-8 shadow-md shadow-black/5
+           hover:shadow-lg hover:shadow-black/10 hover:border-parchment-border transition-all duration-200;
   }
 
   .status-dot {
@@ -110,6 +128,27 @@
 
   .typing-dot {
     @apply w-1.5 h-1.5 rounded-full bg-ink-400 animate-pulse-soft;
+  }
+
+  .section-divider {
+    @apply border-t border-white/5;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 via-purple-600 to-amber-accent bg-clip-text text-transparent;
+  }
+
+  .quick-action-btn {
+    @apply text-xs text-left px-3 py-2.5 rounded-xl
+           bg-white border border-parchment-border/80
+           text-ink-600 hover:text-ink-900 hover:border-blue-300 hover:shadow-md hover:bg-gradient-to-br hover:from-white hover:to-blue-50
+           transition-all duration-200;
+  }
+
+  .stat-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+           bg-gradient-to-r from-blue-50 to-purple-50 text-ink-700 
+           border border-blue-200/50 text-xs font-medium;
   }
 }
 

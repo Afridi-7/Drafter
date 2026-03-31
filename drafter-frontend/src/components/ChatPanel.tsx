@@ -116,23 +116,23 @@ export default function ChatPanel({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gradient-to-b from-parchment/80 to-parchment">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-parchment-border">
+      <div className="px-5 py-4 border-b border-parchment-border bg-gradient-to-r from-white/60 to-blue-50/30">
         <h2 className="font-display text-xl text-ink-900">Chat</h2>
-        <p className="text-xs text-ink-400 mt-0.5">Describe what you'd like to write or edit</p>
+        <p className="text-xs text-ink-500 mt-0.5">Describe what you'd like to write or edit</p>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-12 animate-fade-in">
             <div className="text-5xl mb-4">✍️</div>
             <h3 className="font-display text-lg text-ink-700 mb-2">Ready to write</h3>
-            <p className="text-sm text-ink-400 max-w-xs leading-relaxed">
+            <p className="text-sm text-ink-500 max-w-xs leading-relaxed">
               Start by describing what you'd like to create, or pick a quick action from the sidebar.
             </p>
-            <div className="mt-6 grid grid-cols-2 gap-2 w-full max-w-xs">
+            <div className="mt-8 grid grid-cols-2 gap-3 w-full max-w-xs">
               {[
                 'Write a blog post about productivity',
                 'Draft a professional email',
@@ -142,10 +142,7 @@ export default function ChatPanel({
                 <button
                   key={s}
                   onClick={() => onSend(s)}
-                  className="text-xs text-left px-3 py-2.5 rounded-xl
-                             bg-white border border-parchment-border
-                             text-ink-600 hover:text-ink-900 hover:border-ink-400
-                             hover:shadow-sm transition-all duration-150"
+                  className="quick-action-btn animate-slide-up"
                 >
                   {s}
                 </button>
@@ -154,11 +151,13 @@ export default function ChatPanel({
           </div>
         ) : (
           <>
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
+            {messages.map((msg, idx) => (
+              <div key={msg.id} style={{ animationDelay: `${idx * 50}ms` }} className="animate-slide-up">
+                <MessageBubble msg={msg} />
+              </div>
             ))}
             {loading && (
-              <div className="flex justify-start">
+              <div className="flex justify-start animate-slide-up">
                 <TypingIndicator />
               </div>
             )}
@@ -169,18 +168,18 @@ export default function ChatPanel({
 
       {/* Error banner */}
       {error && (
-        <div className="mx-4 mb-2 flex items-start gap-2 bg-crimson/10 border border-crimson/20
-                        text-crimson rounded-lg px-3 py-2 text-xs animate-fade-in">
-          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+        <div className="mx-4 mb-3 flex items-start gap-3 bg-gradient-to-r from-rose-500/10 to-rose-400/5 border border-rose-300/30
+                        text-rose-700 rounded-lg px-4 py-3 text-xs animate-slide-up">
+          <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-500" />
           <span className="flex-1">{error}</span>
-          <button onClick={onClearError} className="shrink-0 hover:opacity-70">
-            <X size={12} />
+          <button onClick={onClearError} className="shrink-0 hover:opacity-70 transition-opacity">
+            <X size={14} />
           </button>
         </div>
       )}
 
       {/* Input */}
-      <div className="px-4 pb-4 pt-2 border-t border-parchment-border">
+      <div className="px-4 pb-4 pt-3 border-t border-parchment-border/60 bg-white/30">
         <form onSubmit={handleSubmit} className="flex gap-2 items-end">
           <div className="flex-1 relative">
             <textarea
@@ -207,7 +206,7 @@ export default function ChatPanel({
             )}
           </button>
         </form>
-        <p className="text-xs text-ink-300 mt-1.5 text-center">
+        <p className="text-xs text-ink-400 mt-2 text-center">
           Shift+Enter for newline
         </p>
       </div>
