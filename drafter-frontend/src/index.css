@@ -1,111 +1,166 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  html {
+    scroll-behavior: smooth;
+  }
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  body {
+    @apply bg-parchment font-body text-ink-900 antialiased;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8b89a' fill-opacity='0.07'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-ink-200 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-400;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+@layer components {
+  .glass-panel {
+    @apply bg-white/80 backdrop-blur-sm border border-parchment-border rounded-xl shadow-sm;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  .doc-surface {
+    background: #ffffff;
+    background-image:
+      linear-gradient(rgba(200, 184, 154, 0.08) 1px, transparent 1px);
+    background-size: 100% 1.8rem;
+  }
+
+  .tool-badge {
+    @apply inline-flex items-center gap-1 text-xs font-mono font-medium
+           px-2 py-0.5 rounded-md
+           bg-amber-soft text-amber-accent border border-amber-accent/20;
+  }
+
+  .btn-primary {
+    @apply flex items-center justify-center gap-2
+           bg-ink-900 text-parchment
+           px-4 py-2 rounded-lg text-sm font-medium
+           hover:bg-ink-800 active:bg-ink-950
+           transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2
+           bg-transparent text-ink-600
+           px-3 py-2 rounded-lg text-sm
+           border border-parchment-border
+           hover:bg-parchment-dark hover:text-ink-900
+           active:bg-parchment-border
+           transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply flex items-center justify-center gap-1.5
+           text-ink-400 text-xs px-2 py-1.5 rounded-md
+           hover:bg-parchment-dark hover:text-ink-700
+           transition-all duration-150;
+  }
+
+  .input-field {
+    @apply w-full bg-white border border-parchment-border rounded-lg
+           px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400
+           focus:outline-none focus:ring-2 focus:ring-ink-900/10 focus:border-ink-700
+           transition-all duration-150;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-2.5 w-full px-3 py-2 rounded-lg
+           text-sm text-ink-200/80
+           hover:bg-white/10 hover:text-white
+           transition-all duration-150 cursor-pointer;
+  }
+
+  .chat-bubble-user {
+    @apply bg-ink-900 text-parchment
+           rounded-2xl rounded-br-sm
+           px-4 py-3 text-sm leading-relaxed
+           ml-8 shadow-sm;
+  }
+
+  .chat-bubble-ai {
+    @apply bg-white border border-parchment-border
+           rounded-2xl rounded-bl-sm
+           px-4 py-3 text-sm leading-relaxed
+           mr-8 shadow-sm;
+  }
+
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .typing-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-ink-400 animate-pulse-soft;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+/* Markdown inside document preview */
+.doc-markdown h1 {
+  @apply font-display text-2xl font-bold text-ink-900 mb-4 mt-6;
+}
+.doc-markdown h2 {
+  @apply font-display text-xl font-semibold text-ink-800 mb-3 mt-5;
+}
+.doc-markdown h3 {
+  @apply font-display text-lg font-semibold text-ink-700 mb-2 mt-4;
+}
+.doc-markdown p {
+  @apply mb-3 leading-[1.85] text-ink-800;
+}
+.doc-markdown ul, .doc-markdown ol {
+  @apply mb-3 pl-5;
+}
+.doc-markdown li {
+  @apply mb-1 text-ink-800;
+}
+.doc-markdown strong {
+  @apply font-semibold text-ink-900;
+}
+.doc-markdown em {
+  @apply italic text-ink-700;
+}
+.doc-markdown blockquote {
+  @apply border-l-4 border-amber-accent/40 pl-4 italic text-ink-600 my-3;
+}
+.doc-markdown code {
+  @apply font-mono text-xs bg-parchment-dark px-1.5 py-0.5 rounded text-ink-800;
+}
+.doc-markdown hr {
+  @apply border-parchment-border my-5;
 }
 
-body {
-  margin: 0;
+/* Chat markdown */
+.chat-markdown p {
+  @apply mb-2 last:mb-0;
 }
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+.chat-markdown ul {
+  @apply mb-2 pl-4;
 }
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+.chat-markdown li {
+  @apply mb-0.5;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+.chat-markdown strong {
+  @apply font-semibold;
 }
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.chat-markdown code {
+  @apply font-mono text-xs bg-black/10 px-1 py-0.5 rounded;
 }
