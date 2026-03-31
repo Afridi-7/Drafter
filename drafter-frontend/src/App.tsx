@@ -9,56 +9,82 @@ import clsx from 'clsx'
 
 type Panel = 'chat' | 'document'
 
+/* ── Loading screen ────────────────────────────────── */
 function LoadingScreen() {
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center"
-      style={{ background: 'var(--surface)' }}
+      style={{ background: 'var(--bg)' }}
     >
-      <div className="flex items-center gap-3 mb-5">
+      {/* Ambient orbs */}
+      <div className="orb orb-violet" style={{ top: '20%', left: '25%', animationDelay: '0s' }} />
+      <div className="orb orb-pink"   style={{ bottom: '25%', right: '20%', animationDelay: '-4s' }} />
+
+      <div className="relative z-10 flex flex-col items-center anim-scale-in">
         <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(124,58,237,0.18)', border: '1px solid rgba(124,58,237,0.3)' }}
+          className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 anim-float"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(236,72,153,0.15))',
+            border: '1px solid rgba(139,92,246,0.4)',
+            boxShadow: '0 0 40px rgba(124,58,237,0.3)',
+          }}
         >
-          <span className="text-xl">✍️</span>
+          <span style={{ fontSize: '30px' }}>✍️</span>
         </div>
-        <span className="font-serif italic text-2xl" style={{ color: 'var(--text1)' }}>Drafter</span>
-      </div>
-      <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text3)' }}>
-        <Loader2 size={13} className="anim-spin" />
-        Connecting to backend…
+        <span className="font-serif italic text-2xl mb-1 gradient-text">Drafter</span>
+        <div
+          className="flex items-center gap-2 text-sm mt-3"
+          style={{ color: 'var(--t4)' }}
+        >
+          <Loader2 size={13} className="anim-spin" style={{ color: '#8b5cf6' }} />
+          Connecting to backend…
+        </div>
       </div>
     </div>
   )
 }
 
+/* ── Error screen ───────────────────────────────────── */
 function ErrorScreen({ message }: { message: string }) {
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center px-8 text-center"
-      style={{ background: 'var(--surface)' }}
+      style={{ background: 'var(--bg)' }}
     >
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
-        style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)' }}
-      >
-        <WifiOff size={24} style={{ color: '#fb7185' }} />
+      <div className="orb orb-violet" style={{ top: '10%', left: '30%' }} />
+
+      <div className="relative z-10 anim-scale-in">
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 mx-auto"
+          style={{
+            background: 'rgba(244,63,94,0.1)',
+            border: '1px solid rgba(244,63,94,0.25)',
+            boxShadow: '0 0 30px rgba(244,63,94,0.15)',
+          }}
+        >
+          <WifiOff size={26} style={{ color: '#fb7185' }} />
+        </div>
+        <h2 className="font-serif italic text-xl mb-2" style={{ color: 'var(--t1)' }}>
+          Connection Failed
+        </h2>
+        <p className="text-sm mb-7 max-w-sm leading-relaxed" style={{ color: 'var(--t3)' }}>
+          {message}
+        </p>
+        <button onClick={() => window.location.reload()} className="btn-primary mx-auto">
+          Try again
+        </button>
       </div>
-      <h2 className="font-serif italic text-xl mb-2" style={{ color: 'var(--text1)' }}>
-        Connection Failed
-      </h2>
-      <p className="text-sm mb-6 max-w-sm leading-relaxed" style={{ color: 'var(--text3)' }}>
-        {message}
-      </p>
-      <button onClick={() => window.location.reload()} className="btn-primary">
-        Try again
-      </button>
     </div>
   )
 }
 
+/* ── Main App ──────────────────────────────────────── */
 export default function App() {
-  const { state, initialize, sendMessage, setTitle, handleUndo, handleRedo, resetSession, clearError } = useStore()
+  const {
+    state, initialize, sendMessage, setTitle,
+    handleUndo, handleRedo, resetSession, clearError,
+  } = useStore()
+
   const [activePanel, setActivePanel] = useState<Panel>('chat')
 
   useEffect(() => { initialize() }, [initialize])
@@ -77,30 +103,46 @@ export default function App() {
   if (state.error && !state.sessionId) return <ErrorScreen message={state.error} />
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface)' }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
+
+      {/* Ambient background orbs (decorative) */}
+      <div
+        className="pointer-events-none fixed"
+        style={{ top: '-80px', left: '-60px', zIndex: 0 }}
+      >
+        <div className="orb orb-violet" style={{ opacity: 0.6 }} />
+      </div>
+      <div
+        className="pointer-events-none fixed"
+        style={{ bottom: '-60px', right: '-40px', zIndex: 0 }}
+      >
+        <div className="orb orb-pink" style={{ opacity: 0.5 }} />
+      </div>
 
       {/* Sidebar */}
-      <Sidebar
-        documentTitle={state.documentTitle}
-        undoCount={state.undoCount}
-        redoCount={state.redoCount}
-        lastSavedPath={state.lastSavedPath}
-        loading={state.loading}
-        onTitleChange={setTitle}
-        onQuickAction={handleQuickAction}
-        onSave={handleSave}
-        onNewSession={resetSession}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-      />
+      <div className="relative z-10">
+        <Sidebar
+          documentTitle={state.documentTitle}
+          undoCount={state.undoCount}
+          redoCount={state.redoCount}
+          lastSavedPath={state.lastSavedPath}
+          loading={state.loading}
+          onTitleChange={setTitle}
+          onQuickAction={handleQuickAction}
+          onSave={handleSave}
+          onNewSession={resetSession}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+        />
+      </div>
 
-      {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
 
         {/* Mobile tab bar */}
         <div
           className="lg:hidden flex"
-          style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}
+          style={{ borderBottom: '1px solid var(--b1)', background: 'var(--s2)' }}
         >
           {(['chat', 'document'] as Panel[]).map(p => (
             <button
@@ -108,13 +150,15 @@ export default function App() {
               onClick={() => setActivePanel(p)}
               className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium capitalize transition-all"
               style={{
-                color: activePanel === p ? '#a78bfa' : 'var(--text3)',
-                borderBottom: activePanel === p ? '2px solid #7c3aed' : '2px solid transparent',
+                color: activePanel === p ? '#a78bfa' : 'var(--t4)',
+                borderBottom: activePanel === p
+                  ? '2px solid #7c3aed'
+                  : '2px solid transparent',
               }}
             >
               {p === 'chat'
-                ? <><MessageSquare size={14} /> Chat</>
-                : <><FileText size={14} /> Document</>
+                ? <><MessageSquare size={13} /> Chat</>
+                : <><FileText size={13} /> Document</>
               }
             </button>
           ))}
@@ -123,14 +167,14 @@ export default function App() {
         {/* Split panes */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* Chat pane */}
+          {/* Chat */}
           <div
             className={clsx(
               'flex flex-col',
               'lg:flex lg:w-[44%]',
               activePanel === 'chat' ? 'flex w-full' : 'hidden'
             )}
-            style={{ borderRight: '1px solid var(--border)' }}
+            style={{ borderRight: '1px solid var(--b1)' }}
           >
             <ChatPanel
               messages={state.chatMessages}
@@ -141,7 +185,7 @@ export default function App() {
             />
           </div>
 
-          {/* Document pane */}
+          {/* Document */}
           <div
             className={clsx(
               'flex flex-col',
@@ -162,31 +206,36 @@ export default function App() {
         <div
           className="hidden lg:flex items-center justify-between px-5 py-1.5 text-[11px]"
           style={{
-            background: 'var(--surface2)',
-            borderTop: '1px solid var(--border)',
-            color: 'var(--text3)',
+            background: 'var(--s2)',
+            borderTop: '1px solid var(--b1)',
+            color: 'var(--t4)',
           }}
         >
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: state.sessionId ? '#34d399' : '#f87171' }}
+                className={state.sessionId ? 'status-dot-connected' : 'status-dot-disconnected'}
               />
               {state.sessionId ? 'Connected' : 'Disconnected'}
             </span>
             {state.sessionId && (
-              <span className="font-mono opacity-40">{state.sessionId.slice(0, 8)}…</span>
+              <span className="font-mono" style={{ color: 'var(--t4)', opacity: 0.5 }}>
+                {state.sessionId.slice(0, 8)}…
+              </span>
             )}
           </div>
+
           <div className="flex items-center gap-3">
             {state.loading && (
-              <span className="flex items-center gap-1.5" style={{ color: '#a78bfa' }}>
+              <span
+                className="flex items-center gap-1.5 anim-fade-in"
+                style={{ color: '#a78bfa' }}
+              >
                 <Loader2 size={10} className="anim-spin" />
                 Processing…
               </span>
             )}
-            <span className="opacity-40">Drafter v2.0</span>
+            <span style={{ opacity: 0.35 }}>Drafter v2.0</span>
           </div>
         </div>
       </div>
