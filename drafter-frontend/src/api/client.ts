@@ -26,6 +26,7 @@ export interface DocumentState {
 }
 
 export interface SaveResponse {
+  document_b64: string
   b64: string
   format: string
   message: string
