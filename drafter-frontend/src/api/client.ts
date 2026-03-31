@@ -25,19 +25,26 @@ export interface DocumentState {
   last_saved_path: string
 }
 
+export interface SaveResponse {
+  b64: string
+  format: string
+  message: string
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
+  console.log(`[API] Calling ${path}`, options?.method || 'GET')
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
   if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`API error ${res.status}: ${body}`)
+    throw new Error(`API error ${res.status}`)
   }
-  return res.json() as Promise<T>
+  const data = await res.json()
+  return data as Promise<T>
 }
 
 export const api = {
@@ -56,6 +63,15 @@ export const api = {
 
   getDocument: (sessionId: string) =>
     request<DocumentState>(`/sessions/${sessionId}/document`),
+
+  saveDocument: (
+    sessionId: string,
+    format: 'md' | 'txt' | 'docx'
+  ) =>
+    request<SaveResponse>(`/sessions/${sessionId}/save`, {
+      method: 'POST',
+      body: JSON.stringify({ format }),
+    }),
 
   deleteSession: (sessionId: string) =>
     request<{ deleted: string }>(`/sessions/${sessionId}`, {

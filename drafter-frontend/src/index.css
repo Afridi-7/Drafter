@@ -751,17 +751,11 @@ textarea.input { resize: none; line-height: 1.65; }
    DOCUMENT SURFACE (white paper)
 ═══════════════════════════════════════════════ */
 .doc-surface {
-  background-color: #fcfcfd;
-  color: #111;
+  background-color: var(--surface);
+  color: var(--text1);
   font-family: 'Instrument Serif', Georgia, serif;
   font-size: 16px;
   line-height: 1.9;
-  background-image: 
-    repeating-linear-gradient(
-      transparent, transparent 31px,
-      rgba(99,60,180,0.06) 31px, rgba(99,60,180,0.06) 32px
-    );
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
 }
 
 /* ═══════════════════════════════════════════════
@@ -771,64 +765,64 @@ textarea.input { resize: none; line-height: 1.65; }
   font-size: 2rem; font-weight: 800;
   margin: 0 0 1.2rem; line-height: 1.15;
   letter-spacing: -0.03em;
-  background: linear-gradient(135deg, #3b0764 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 .prose-doc h2 {
   font-size: 1.4rem; font-weight: 700;
-  margin: 2.2rem 0 0.7rem; color: #1a0533;
+  margin: 2.2rem 0 0.7rem; color: var(--text1);
   letter-spacing: -0.02em;
   padding-bottom: 0.4rem;
-  border-bottom: 2px solid rgba(124,58,237,0.15);
+  border-bottom: 2px solid rgba(167,139,250,0.3);
 }
 .prose-doc h3 {
   font-size: 1.1rem; font-weight: 700;
-  margin: 1.6rem 0 0.45rem; color: #2a0a4a;
+  margin: 1.6rem 0 0.45rem; color: var(--text1);
 }
-.prose-doc p               { margin: 0 0 1rem; color: #1e1e2e; }
+.prose-doc p               { margin: 0 0 1rem; color: var(--text2); }
 .prose-doc ul, .prose-doc ol { margin: 0 0 1rem; padding-left: 1.5rem; }
-.prose-doc li              { margin-bottom: 0.35rem; color: #1e1e2e; }
-.prose-doc li::marker      { color: #7c3aed; }
+.prose-doc li              { margin-bottom: 0.35rem; color: var(--text2); }
+.prose-doc li::marker      { color: #a78bfa; }
 .prose-doc blockquote {
-  border-left: 3px solid #7c3aed;
+  border-left: 3px solid #a78bfa;
   margin: 1.2rem 0; padding: 0.5rem 0 0.5rem 1.1rem;
-  color: #4b2e83; font-style: italic;
-  background: rgba(124,58,237,0.04);
+  color: var(--text2); font-style: italic;
+  background: rgba(167,139,250,0.08);
   border-radius: 0 8px 8px 0;
 }
 .prose-doc code {
   font-family: 'Geist Mono', monospace;
   font-size: 0.83em;
-  background: #f0eeff; color: #5b21b6;
+  background: rgba(167,139,250,0.15); color: #c4b5fd;
   padding: 2px 6px; border-radius: 5px;
-  border: 1px solid rgba(124,58,237,0.15);
+  border: 1px solid rgba(167,139,250,0.25);
 }
 .prose-doc pre {
-  background: #0d0d1a; color: #d4c4ff;
+  background: rgba(0,0,0,0.3); color: #d4c4ff;
   padding: 1.1rem; border-radius: 10px;
   overflow-x: auto; margin: 1.1rem 0;
-  border: 1px solid rgba(124,58,237,0.22);
+  border: 1px solid rgba(167,139,250,0.22);
 }
 .prose-doc pre code        { background: none; border: none; color: inherit; padding: 0; }
-.prose-doc strong          { font-weight: 800; color: #1a0533; }
-.prose-doc em              { color: #4b2e83; }
+.prose-doc strong          { font-weight: 800; color: var(--text1); }
+.prose-doc em              { color: var(--text2); }
 .prose-doc hr {
   border: none; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(124,58,237,0.3), transparent);
+  background: linear-gradient(90deg, transparent, rgba(167,139,250,0.3), transparent);
   margin: 1.8rem 0;
 }
-.prose-doc a               { color: #7c3aed; text-decoration: underline; text-underline-offset: 2px; }
-.prose-doc a:hover         { color: #6d28d9; }
+.prose-doc a               { color: #a78bfa; text-decoration: underline; text-underline-offset: 2px; }
+.prose-doc a:hover         { color: #c4b5fd; }
 .prose-doc table           { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9em; }
 .prose-doc th {
-  background: rgba(124,58,237,0.08); color: #3b0764;
+  background: rgba(167,139,250,0.15); color: var(--text1);
   font-weight: 700; padding: 8px 12px; text-align: left;
-  border-bottom: 2px solid rgba(124,58,237,0.2);
+  border-bottom: 2px solid rgba(167,139,250,0.3);
 }
-.prose-doc td              { padding: 7px 12px; border-bottom: 1px solid rgba(124,58,237,0.07); color: #1e1e2e; }
-.prose-doc tr:hover td     { background: rgba(124,58,237,0.03); }
+.prose-doc td              { padding: 7px 12px; border-bottom: 1px solid rgba(167,139,250,0.1); color: var(--text2); }
+.prose-doc tr:hover td     { background: rgba(167,139,250,0.05); }
 
 /* ═══════════════════════════════════════════════
    PROSE — CHAT (on dark)

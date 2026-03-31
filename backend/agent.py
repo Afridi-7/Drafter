@@ -102,6 +102,7 @@ def update_document(content: str) -> str:
     """
     _push_history(content)
     wc = len(content.split())
+    
     return f"✅ Document updated ({wc} words).\n\nCURRENT:\n{_ctx()['document_content']}"
 
 
@@ -352,7 +353,7 @@ _model = ChatOpenAI(
     model="gpt-4o",
     temperature=0.7,
     streaming=False,  # streaming handled at API layer
-).bind_tools(TOOLS)
+).bind_tools(TOOLS, tool_choice="auto")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -395,9 +396,7 @@ def agent_node(state: AgentState) -> dict:
     )
 
     system = SystemMessage(
-        content=f"""You are Drafter — an expert writing assistant with a sharp editorial eye.
-
-Personality: precise, thoughtful, warm. Write like a senior editor — clear, never verbose.
+        content=f"""You are Drafter — an expert writing assistant. Your PRIMARY JOB is to write content into a document using your tools.
 
 ═══ CURRENT DOCUMENT ═══
 {preview if preview else "(empty — awaiting content)"}
@@ -409,36 +408,87 @@ DOCUMENT INFO:
 • History : {history_info}
 • Redo    : {len(ctx['redo_stack'])} version(s) available
 
-AVAILABLE TOOLS:
-• update_document       → Replace entire document
-• append_to_document    → Add to end
-• prepend_to_document   → Add to beginning
-• replace_section       → Targeted find-and-replace
-• insert_after_section  → Insert content after a heading
-• undo_last_change      → Step back one version
-• redo_last_change      → Step forward one version
-• get_document_stats    → Word count, reading time, etc.
-• save_document         → Save as .txt, .md, .docx, or .pdf
+🔧 YOUR TOOLS (YOU MUST USE THESE):
+• update_document(content)      → Replace entire document with new content
+• append_to_document(content)   → Add content to the end
+• prepend_to_document(content)  → Add content to the beginning
+• replace_section(old, new)     → Find and replace specific text
+• insert_after_section(heading, content) → Insert after a heading
+• undo_last_change()            → Undo last change
+• redo_last_change()            → Redo last change
+• get_document_stats()          → Get word count, reading time
+• save_document(title, format)  → Save as .txt, .md, .docx, or .pdf
 
-RULES:
-1. Always use the most targeted tool (prefer replace_section over full rewrites).
-2. After every edit, briefly summarise what changed + offer 2–3 specific next steps.
-3. Support Markdown formatting in document content.
-4. When user says "save", call save_document immediately.
-5. If the document seems incomplete, proactively suggest improvements.
+⚠️ CRITICAL RULES - READ CAREFULLY:
+1. **YOU MUST USE TOOLS TO WRITE CONTENT** - When the user asks you to write, draft, create, or generate ANY content (emails, letters, blog posts, etc.), you MUST call update_document() or append_to_document() with the ACTUAL content. DO NOT just describe what you would write - WRITE IT using the tool!
+
+2. **EXAMPLE - CORRECT BEHAVIOR**:
+   User: "Write an email about sick leave"
+   YOU MUST DO: Call update_document(content="Subject: Sick Leave Request\n\nDear [Manager's Name]...")
+   Then respond: "I've drafted your sick leave email. You can see it in the document panel."
+   
+3. **EXAMPLE - WRONG BEHAVIOR** (DO NOT DO THIS):
+   User: "Write an email about sick leave"
+   WRONG: Just responding "I've drafted an email..." without calling any tool
+   
+4. The user can ONLY see content that you put in the document using tools. If you don't call a tool, they see nothing!
+
+5. After calling a tool, briefly confirm what you did and suggest next steps.
+
+6. When user asks to save/download, call save_document with appropriate format.
+
+7. Use Markdown formatting in your content for better readability.
+
+REMEMBER: Your tools are how you actually create content for the user. Always use them when writing!
 """
     )
 
     response = _model.invoke([system] + list(state["messages"]))
-    return {"messages": [response], **_sync_state_from_ctx()}
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        pass
+    else:
+        pass
+    result = {"messages": [response], **_sync_state_from_ctx()}
+    return result
 
 
 def tools_node(state: AgentState) -> dict:
+    # Sync context from state BEFORE running tools
     _sync_ctx_from_state(state)
-    tool_node = ToolNode(TOOLS)
-    result = tool_node.invoke(state)
-    result.update(_sync_state_from_ctx())
-    return result
+    
+    # Create a custom tool executor that preserves context
+    from langchain_core.messages import ToolMessage
+    
+    tool_messages = []
+    last_message = state["messages"][-1]
+    
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_id = tool_call["id"]
+            
+            # Find and execute the tool
+            tool_func = next((t for t in TOOLS if t.name == tool_name), None)
+            if tool_func:
+                try:
+                    result = tool_func.invoke(tool_args)
+                    tool_messages.append(
+                        ToolMessage(content=str(result), tool_call_id=tool_id)
+                    )
+                except Exception as e:
+                    tool_messages.append(
+                        ToolMessage(content=f"Error: {str(e)}", tool_call_id=tool_id)
+                    )
+    
+    # NOW sync state from context (after tools have run)
+    sync_data = _sync_state_from_ctx()
+
+    
+    return {
+        "messages": tool_messages,
+        **sync_data
+    }
 
 
 def should_continue(state: AgentState) -> str:
@@ -493,7 +543,8 @@ def send_message(
         tool_calls_made  : list of tool names used
         state            : full updated state for next call
     """
-    if not state:
+    # Initialize state with defaults if empty or missing fields
+    if not state or "messages" not in state:
         state = {
             "messages": [],
             "document_content": "",
@@ -504,6 +555,26 @@ def send_message(
             "last_saved_b64": "",
             "last_saved_format": "",
         }
+    
+    # Ensure all required fields exist in state
+    state.setdefault("document_content", "")
+    state.setdefault("document_history", [])
+    state.setdefault("redo_stack", [])
+    state.setdefault("document_title", "Untitled")
+    state.setdefault("last_saved_path", "")
+    state.setdefault("last_saved_b64", "")
+    state.setdefault("last_saved_format", "")
+    
+    # Initialize context for this session
+    _local.data = {
+        "document_content": state.get("document_content", ""),
+        "document_history": list(state.get("document_history", [])),
+        "redo_stack": list(state.get("redo_stack", [])),
+        "document_title": state.get("document_title", "Untitled"),
+        "last_saved_path": state.get("last_saved_path", ""),
+        "last_saved_b64": state.get("last_saved_b64", ""),
+        "last_saved_format": state.get("last_saved_format", ""),
+    }
 
     state["messages"] = list(state.get("messages", [])) + [
         HumanMessage(content=user_message)
@@ -528,6 +599,8 @@ def send_message(
             "state": state,
         }
 
+
+    
     ai_response = ""
     tool_calls_made: list[str] = []
     for msg in reversed(final_state["messages"]):
@@ -536,8 +609,39 @@ def send_message(
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 tool_calls_made = [tc["name"] for tc in msg.tool_calls]
             break
+    
 
-    return {
+    
+    # Check if user asked to write/create/draft but AI didn't use tools
+    write_keywords = ["write", "draft", "create", "compose", "generate", "make me", "email", "letter", "blog", "post"]
+    user_wants_content = any(keyword in user_message.lower() for keyword in write_keywords)
+    
+
+    
+    if user_wants_content and not tool_calls_made:
+
+        
+        # Force the AI to use tools by adding a very strong message
+        force_msg = HumanMessage(
+            content="STOP! You MUST call the update_document tool RIGHT NOW. Don't explain, don't describe - just call update_document(content='...') with the FULL email/letter content. Do it NOW."
+        )
+        final_state["messages"].append(force_msg)
+        
+        # Run one more iteration
+        for step in _graph.stream(final_state, config=config, stream_mode="values"):
+            final_state = step
+        
+        # Re-extract the response
+        for msg in reversed(final_state["messages"]):
+            if isinstance(msg, AIMessage):
+                if msg.content:
+                    ai_response = msg.content
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    tool_calls_made = [tc["name"] for tc in msg.tool_calls]
+
+                break
+
+    result = {
         "ai_response": ai_response,
         "document_content": final_state.get("document_content", ""),
         "document_history": final_state.get("document_history", []),
@@ -548,3 +652,4 @@ def send_message(
         "tool_calls_made": tool_calls_made,
         "state": final_state,
     }
+    return result

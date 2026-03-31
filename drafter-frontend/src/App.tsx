@@ -82,7 +82,7 @@ function ErrorScreen({ message }: { message: string }) {
 export default function App() {
   const {
     state, initialize, sendMessage, setTitle,
-    handleUndo, handleRedo, resetSession, clearError,
+    handleUndo, handleRedo, resetSession, clearError, saveDocument,
   } = useStore()
 
   const [activePanel, setActivePanel] = useState<Panel>('chat')
@@ -198,6 +198,7 @@ export default function App() {
               content={state.documentContent}
               undoCount={state.undoCount}
               redoCount={state.redoCount}
+              onSave={saveDocument}
             />
           </div>
         </div>

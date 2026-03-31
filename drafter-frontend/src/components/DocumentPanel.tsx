@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Copy, Check, Eye, Code2, FileText } from 'lucide-react'
+import { Copy, Check, Eye, Code2, FileText, Download, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 
 interface Props {
@@ -10,16 +10,46 @@ interface Props {
   content:   string
   undoCount: number
   redoCount: number
+  onSave?:   (format: 'md' | 'txt' | 'docx') => Promise<string>
 }
 
 function copyToClipboard(text: string, onDone: () => void) {
-  navigator.clipboard.writeText(text).then(onDone)
+  navigator.clipboard.writeText(text).then(onDone).catch(() => {})
+}
+
+function triggerDownloadFromBase64(b64: string, format: 'md' | 'txt' | 'docx', filename: string) {
+  try {
+    const binaryString = atob(b64)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+
+    const mimeTypes: Record<string, string> = {
+      md: 'text/markdown; charset=utf-8',
+      txt: 'text/plain; charset=utf-8',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }
+
+    const blob = new Blob([bytes], { type: mimeTypes[format] })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${filename}.${format}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Download error:', error)
+    throw new Error('Failed to download file')
+  }
 }
 
 function StatsBar({ content }: { content: string }) {
-  const words    = content.trim() ? content.split(/\s+/).length : 0
-  const chars    = content.length
-  const paras    = content.trim() ? content.split(/\n\n+/).filter(p => p.trim()).length : 0
+  const words = content.trim() ? content.split(/\s+/).length : 0
+  const chars = content.length
+  const paras = content.trim() ? content.split(/\n\n+/).filter(p => p.trim()).length : 0
   const readTime = Math.max(1, Math.round(words / 200))
 
   return (
@@ -35,9 +65,12 @@ function StatsBar({ content }: { content: string }) {
   )
 }
 
-export default function DocumentPanel({ title, content, undoCount, redoCount }: Props) {
+export default function DocumentPanel({ title, content, undoCount, redoCount, onSave }: Props) {
   const [viewMode, setViewMode] = useState<'preview' | 'source'>('preview')
-  const [copied,   setCopied]   = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false)
+  const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   const isEmpty = !content.trim()
 
@@ -48,9 +81,50 @@ export default function DocumentPanel({ title, content, undoCount, redoCount }: 
     })
   }
 
-  return (
-    <div className="flex flex-col h-full" style={{ background: isEmpty ? 'var(--surface)' : '#fff' }}>
+  const handleDownload = async (format: 'md' | 'txt' | 'docx') => {
+    setDownloadingFormat(format)
+    setDownloadError(null)
+    try {
+      let b64: string
 
+      if (onSave) {
+        // Get base64 from backend
+        b64 = await onSave(format)
+      } else {
+        // Fallback: client-side conversion to base64
+        const mimeTypes: Record<string, string> = {
+          md: 'text/markdown',
+          txt: 'text/plain',
+          docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }
+        const blob = new Blob([content], { type: mimeTypes[format] })
+        b64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const result = reader.result as string
+            resolve(result.split(',')[1] || '')
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+      }
+
+      if (!b64) throw new Error('Invalid file data')
+
+      const safe = title.replace(/[^\w\-]/g, '_').slice(0, 30) || 'document'
+      triggerDownloadFromBase64(b64, format, safe)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Download failed'
+      setDownloadError(msg)
+      console.error('Download error:', error)
+    } finally {
+      setDownloadingFormat(null)
+      setTimeout(() => setShowDownloadMenu(false), 500)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: 'var(--surface)' }}>
       {/* Header */}
       <div
         className="px-5 py-4 flex items-center justify-between gap-4"
@@ -61,10 +135,7 @@ export default function DocumentPanel({ title, content, undoCount, redoCount }: 
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <FileText size={15} style={{ color: 'var(--text3)', flexShrink: 0 }} />
-          <h2
-            className="font-serif italic text-lg truncate"
-            style={{ color: 'var(--text1)' }}
-          >
+          <h2 className="font-serif italic text-lg truncate" style={{ color: 'var(--text1)' }}>
             {title}
           </h2>
         </div>
@@ -80,6 +151,86 @@ export default function DocumentPanel({ title, content, undoCount, redoCount }: 
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? 'Copied!' : 'Copy'}
             </button>
+          )}
+
+          {/* Download button with dropdown */}
+          {!isEmpty && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                className="btn-ghost text-xs py-1.5 px-3"
+                title="Download document"
+              >
+                <Download size={12} /> Download
+              </button>
+              {showDownloadMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '0.25rem',
+                    background: 'var(--surface2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    zIndex: 10,
+                    minWidth: '150px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  {(['md', 'txt', 'docx'] as const).map(fmt => (
+                    <button
+                      key={fmt}
+                      onClick={() => handleDownload(fmt)}
+                      disabled={downloadingFormat !== null}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        textAlign: 'left',
+                        fontSize: '12px',
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: downloadingFormat !== null ? 'not-allowed' : 'pointer',
+                        color: downloadingFormat !== null ? 'var(--text3)' : 'var(--text1)',
+                        borderBottom: fmt === 'txt' ? '1px solid var(--border)' : 'none',
+                        opacity: downloadingFormat !== null ? 0.5 : 1,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (downloadingFormat === null) {
+                          (e.target as HTMLButtonElement).style.background = 'var(--surface3)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLButtonElement).style.background = 'transparent'
+                      }}
+                    >
+                      {downloadingFormat === fmt ? (
+                        <>
+                          <Loader2 size={10} className="anim-spin" style={{ display: 'inline', marginRight: '0.25rem' }} />
+                          {fmt.toUpperCase()}
+                        </>
+                      ) : (
+                        fmt.toUpperCase()
+                      )}
+                    </button>
+                  ))}
+                  {downloadError && (
+                    <div
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        fontSize: '11px',
+                        color: '#fb7185',
+                        borderTop: '1px solid var(--border)',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {downloadError}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* View toggle */}
@@ -137,10 +288,7 @@ export default function DocumentPanel({ title, content, undoCount, redoCount }: 
             </div>
           </div>
         ) : (
-          <div
-            className="min-h-full p-6"
-            style={{ background: 'var(--surface)' }}
-          >
+          <div className="min-h-full p-6" style={{ background: 'var(--surface)' }}>
             <pre
               className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words p-5 rounded-xl"
               style={{

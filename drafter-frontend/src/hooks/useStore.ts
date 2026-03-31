@@ -41,8 +41,8 @@ const loadFromStorage = (): Partial<PersistedState> => {
         ...m,
         timestamp: new Date(m.timestamp)
       })),
-      documentContent: parsed.documentContent,
-      documentTitle: parsed.documentTitle,
+      documentContent: parsed.documentContent || '',
+      documentTitle: parsed.documentTitle || 'Untitled Document',
     }
   } catch {
     return {}
@@ -75,6 +75,7 @@ export function useStore() {
   })
   const initRef = useRef(false)
 
+  // Persist to localStorage whenever state changes
   useEffect(() => {
     saveToStorage({
       chatMessages: state.chatMessages,
@@ -102,8 +103,10 @@ export function useStore() {
     setState(s => ({ ...s, loading: true, error: null }))
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(), role: 'user',
-      content: message, timestamp: new Date(),
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
     }
     setState(s => ({ ...s, chatMessages: [...s.chatMessages, userMsg] }))
 
@@ -111,24 +114,24 @@ export function useStore() {
       const res = await api.sendMessage(state.sessionId!, message, state.documentTitle)
 
       const aiMsg: ChatMessage = {
-        id: crypto.randomUUID(), role: 'assistant',
-        content: res.ai_response, tools: res.tool_calls_made, timestamp: new Date(),
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: res.ai_response,
+        tools: res.tool_calls_made,
+        timestamp: new Date(),
       }
 
+      // Update state with fresh document content and counts
       setState(s => ({
         ...s,
-        loading:         false,
-        chatMessages:    [...s.chatMessages, aiMsg],
-        documentContent: res.document_content,
-        undoCount:       res.undo_count,
-        redoCount:       res.redo_count,
-        lastSavedPath:   res.last_saved_path || s.lastSavedPath,
+        loading: false,
+        chatMessages: [...s.chatMessages, aiMsg],
+        // Ensure document content is updated from response (use ?? to allow empty strings)
+        documentContent: res.document_content ?? s.documentContent,
+        undoCount: res.undo_count ?? s.undoCount,
+        redoCount: res.redo_count ?? s.redoCount,
+        lastSavedPath: res.last_saved_path || s.lastSavedPath,
       }))
-
-      if (res.last_saved_b64 && res.last_saved_format) {
-        const safe = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
-        triggerDownload(res.last_saved_b64, res.last_saved_format, safe)
-      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
       setState(s => ({ ...s, loading: false, error: msg }))
@@ -148,13 +151,22 @@ export function useStore() {
   }, [sendMessage])
 
   const resetSession = useCallback(async () => {
-    if (state.sessionId) await api.deleteSession(state.sessionId).catch(() => {})
+    if (state.sessionId) {
+      await api.deleteSession(state.sessionId).catch(() => {})
+    }
     initRef.current = false
-    
+
     const freshState = {
-      sessionId: null, loading: false, initializing: true, error: null,
-      chatMessages: [], documentContent: '', documentTitle: 'Untitled Document',
-      undoCount: 0, redoCount: 0, lastSavedPath: '',
+      sessionId: null,
+      loading: false,
+      initializing: true,
+      error: null,
+      chatMessages: [],
+      documentContent: '',
+      documentTitle: 'Untitled Document',
+      undoCount: 0,
+      redoCount: 0,
+      lastSavedPath: '',
     }
     setState(freshState)
     saveToStorage({
@@ -162,7 +174,8 @@ export function useStore() {
       documentContent: '',
       documentTitle: 'Untitled Document',
     })
-    
+
+    // Delay re-init to ensure clean state
     setTimeout(async () => {
       initRef.current = false
       try {
@@ -171,12 +184,37 @@ export function useStore() {
       } catch {
         setState(s => ({ ...s, initializing: false }))
       }
-    }, 80)
+    }, 100)
   }, [state.sessionId])
 
   const clearError = useCallback(() => {
     setState(s => ({ ...s, error: null }))
   }, [])
 
-  return { state, initialize, sendMessage, setTitle, handleUndo, handleRedo, resetSession, clearError }
+  const saveDocument = useCallback(
+    async (format: 'md' | 'txt' | 'docx'): Promise<string> => {
+      if (!state.sessionId) throw new Error('No active session')
+      try {
+        const res = await api.saveDocument(state.sessionId, format)
+        return res.b64 || res.document_b64 || ''
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to save document'
+        setState(s => ({ ...s, error: msg }))
+        throw e
+      }
+    },
+    [state.sessionId]
+  )
+
+  return {
+    state,
+    initialize,
+    sendMessage,
+    setTitle,
+    handleUndo,
+    handleRedo,
+    resetSession,
+    clearError,
+    saveDocument,
+  }
 }

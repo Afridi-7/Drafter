@@ -73,6 +73,16 @@ class DocumentStateResponse(BaseModel):
     last_saved_path: str
 
 
+class SaveDocumentRequest(BaseModel):
+    format: str  # 'md', 'txt', or 'docx'
+
+
+class SaveDocumentResponse(BaseModel):
+    b64: str
+    format: str
+    message: str
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.post("/sessions", response_model=CreateSessionResponse)
@@ -102,8 +112,8 @@ def send_session_message(session_id: str, body: SendMessageRequest):
     )
 
     _sessions[session_id] = result["state"]
-
-    return SendMessageResponse(
+    
+    response = SendMessageResponse(
         ai_response=result["ai_response"],
         document_content=result["document_content"],
         undo_count=len(result.get("document_history", [])),
@@ -113,6 +123,8 @@ def send_session_message(session_id: str, body: SendMessageRequest):
         last_saved_format=result.get("last_saved_format", ""),
         tool_calls_made=result["tool_calls_made"],
     )
+    
+    return response
 
 
 @app.get("/sessions/{session_id}/document", response_model=DocumentStateResponse)
@@ -126,6 +138,38 @@ def get_document(session_id: str):
         undo_count=len(state.get("document_history", [])),
         redo_count=len(state.get("redo_stack", [])),
         last_saved_path=state.get("last_saved_path", ""),
+    )
+
+
+@app.post("/sessions/{session_id}/save", response_model=SaveDocumentResponse)
+def save_document(session_id: str, body: SaveDocumentRequest):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    state = _sessions[session_id]
+    content = state.get("document_content", "")
+    title = state.get("document_title", "Untitled")
+    
+    # Send message to agent to save the document
+    from agent import save_document as agent_save_doc, _ctx
+    
+    # Call the save tool directly - it will handle file creation and base64 encoding
+    result_msg = agent_save_doc(content, title, body.format)
+    
+    # Get the context which has the base64 data
+    ctx = _ctx()
+    b64 = ctx.get("last_saved_b64", "")
+    fmt = ctx.get("last_saved_format", body.format)
+    
+    # Update session state with the saved info
+    state["last_saved_path"] = ctx.get("last_saved_path", "")
+    state["last_saved_b64"] = b64
+    state["last_saved_format"] = fmt
+    
+    return SaveDocumentResponse(
+        b64=b64,
+        format=fmt,
+        message=result_msg,
     )
 
 
