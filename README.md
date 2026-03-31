@@ -244,15 +244,4 @@ For Nginx, point the root to `frontend/dist/` and proxy `/api/` to the backend.
 
 ---
 
-## Key Improvements Over Original
 
-| Area | Original | Improved |
-|------|----------|----------|
-| Concurrency | Global `_ctx` dict (race conditions) | `threading.local` (thread-safe) |
-| Graph routing | Always routes to tools | Conditional: only routes if tool calls exist |
-| Tools | 8 tools | 9 tools (added `insert_after_section`) |
-| Downloads | Server-side only | Base64 payload → browser download |
-| Frontend | Streamlit | React + TypeScript + Tailwind |
-| API | None | FastAPI with auto-docs at `/docs` |
-| State | Streamlit session | React hooks + API-backed state |
-| Redo stack | Present but unused in UI | Fully exposed in sidebar |
