@@ -16,10 +16,10 @@ const QUICK_ACTIONS = [
 ]
 
 const FORMATS = [
-  { value: 'md',   label: 'Markdown',   ext: '.md',   icon: FileText },
-  { value: 'txt',  label: 'Plain Text', ext: '.txt',  icon: File     },
-  { value: 'docx', label: 'Word',       ext: '.docx', icon: FileType },
-  { value: 'pdf',  label: 'PDF',        ext: '.pdf',  icon: BookOpen },
+  { value: 'md',   label: 'Markdown',  ext: '.md',   icon: FileText },
+  { value: 'txt',  label: 'Plain Text',ext: '.txt',  icon: File     },
+  { value: 'docx', label: 'Word',      ext: '.docx', icon: FileType },
+  { value: 'pdf',  label: 'PDF',       ext: '.pdf',  icon: BookOpen },
 ]
 
 interface SidebarProps {
@@ -41,42 +41,44 @@ export default function Sidebar({
   loading, onTitleChange, onQuickAction, onSave, onNewSession,
   onUndo, onRedo,
 }: SidebarProps) {
-  const [saveFormat,   setSaveFormat]   = useState('md')
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft,   setTitleDraft]   = useState(documentTitle)
+  const [saveFormat,    setSaveFormat]    = useState('md')
+  const [editingTitle,  setEditingTitle]  = useState(false)
+  const [titleDraft,    setTitleDraft]    = useState(documentTitle)
 
   const commitTitle = () => {
-    onTitleChange(titleDraft.trim() || 'Untitled Document')
+    const val = titleDraft.trim() || 'Untitled Document'
+    onTitleChange(val)
     setEditingTitle(false)
   }
 
   return (
     <aside
-      className="w-[215px] shrink-0 flex flex-col h-full overflow-hidden"
-      style={{
-        background: 'var(--s1)',
-        borderRight: '1px solid var(--b1)',
-      }}
+      className="w-[220px] shrink-0 flex flex-col h-full overflow-hidden"
+      style={{ background: 'var(--surface2)', borderRight: '1px solid var(--border)' }}
     >
-      {/* ── Logo ── */}
+      {/* Logo */}
       <div className="px-4 pt-5 pb-4">
-        <div className="flex items-center gap-2.5 mb-1">
-          <div className="logo-icon anim-fade-in">
-            <Feather size={14} style={{ color: '#c4b5fd' }} />
+        <div className="flex items-center gap-2.5 mb-0.5">
+          <div
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.3)' }}
+          >
+            <Feather size={14} style={{ color: '#a78bfa' }} />
           </div>
-          <span className="font-serif italic text-[1.15rem] gradient-text-static anim-fade-in" style={{ animationDelay: '60ms' }}>
+          <span className="font-serif italic text-lg" style={{ color: 'var(--text1)' }}>
             Drafter
           </span>
         </div>
-        <p className="text-[11px] pl-[42px] anim-fade-in" style={{ color: 'var(--t4)', animationDelay: '120ms' }}>
-          AI writing assistant
-        </p>
+        <p className="text-xs pl-9" style={{ color: 'var(--text3)' }}>AI writing assistant</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-3 space-y-1">
+      <div
+        className="flex-1 overflow-y-auto pb-3"
+        style={{ '--scrollbar-width': '3px' } as React.CSSProperties}
+      >
 
         {/* ── Document ── */}
-        <div className="px-3 pt-2 pb-3 anim-slide-left" style={{ animationDelay: '80ms' }}>
+        <div className="px-3 mb-4">
           <p className="sidebar-label mb-2">Document</p>
 
           {editingTitle ? (
@@ -92,100 +94,91 @@ export default function Sidebar({
           ) : (
             <button
               onClick={() => { setTitleDraft(documentTitle); setEditingTitle(true) }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left group"
               style={{
-                background: 'var(--s3)',
-                border: '1px solid var(--b1)',
-                color: 'var(--t2)',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--b3)'
-                e.currentTarget.style.boxShadow = 'var(--glow-sm)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--b1)'
-                e.currentTarget.style.boxShadow = 'none'
+                background: 'var(--surface3)',
+                border: '1px solid var(--border)',
+                color: 'var(--text2)',
               }}
             >
               <span className="truncate pr-2">{documentTitle}</span>
-              <ChevronRight size={10} style={{ color: 'var(--t4)', flexShrink: 0 }} />
+              <ChevronRight size={10} style={{ color: 'var(--text3)', flexShrink: 0 }} />
             </button>
           )}
 
-          {/* Undo / Redo */}
+          {/* Undo / Redo row */}
           <div className="flex gap-1.5 mt-2">
             <button
               onClick={onUndo}
               disabled={undoCount === 0 || loading}
-              className="btn-ghost flex-1 text-xs py-1.5 gap-1.5"
-              title="Undo last change"
+              className="btn-ghost flex-1 text-xs py-1.5"
+              title="Undo"
             >
               <RotateCcw size={11} />
-              <span>{undoCount > 0 ? undoCount : ''}</span>
+              {undoCount > 0 && <span>{undoCount}</span>}
             </button>
             <button
               onClick={onRedo}
               disabled={redoCount === 0 || loading}
-              className="btn-ghost flex-1 text-xs py-1.5 gap-1.5"
-              title="Redo last change"
+              className="btn-ghost flex-1 text-xs py-1.5"
+              title="Redo"
             >
               <RotateCw size={11} />
-              <span>{redoCount > 0 ? redoCount : ''}</span>
+              {redoCount > 0 && <span>{redoCount}</span>}
             </button>
           </div>
         </div>
 
-        <div className="divider" />
+        {/* ── Divider ── */}
+        <div className="mx-3 mb-4" style={{ height: '1px', background: 'var(--border)' }} />
 
         {/* ── Quick Actions ── */}
-        <div className="px-3 py-3 anim-slide-left" style={{ animationDelay: '140ms' }}>
+        <div className="px-3 mb-4">
           <div className="flex items-center gap-1.5 mb-2">
-            <Zap size={10} style={{ color: 'var(--t4)' }} />
+            <Zap size={10} style={{ color: 'var(--text3)' }} />
             <p className="sidebar-label">Quick actions</p>
           </div>
-          <div className="space-y-0.5 stagger">
+          <div className="space-y-0.5">
             {QUICK_ACTIONS.map(a => (
               <button
                 key={a.label}
                 onClick={() => onQuickAction(a.prompt)}
                 disabled={loading}
-                className="nav-item anim-slide-left"
+                className="nav-item"
               >
-                <span style={{ fontSize: '13px', lineHeight: 1 }}>{a.emoji}</span>
+                <span className="text-sm leading-none">{a.emoji}</span>
                 <span>{a.label}</span>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="divider" />
+        {/* ── Divider ── */}
+        <div className="mx-3 mb-4" style={{ height: '1px', background: 'var(--border)' }} />
 
         {/* ── Export ── */}
-        <div className="px-3 py-3 anim-slide-left" style={{ animationDelay: '200ms' }}>
+        <div className="px-3">
           <div className="flex items-center gap-1.5 mb-2">
-            <Download size={10} style={{ color: 'var(--t4)' }} />
+            <Download size={10} style={{ color: 'var(--text3)' }} />
             <p className="sidebar-label">Export</p>
           </div>
 
           <div className="space-y-1.5 mb-3">
             {FORMATS.map(fmt => {
               const Icon = fmt.icon
-              const sel  = saveFormat === fmt.value
               return (
                 <label
                   key={fmt.value}
-                  className={clsx('format-card', sel && 'selected')}
+                  className={clsx('format-card', saveFormat === fmt.value && 'selected')}
                   onClick={() => setSaveFormat(fmt.value)}
-                  style={{ cursor: 'pointer' }}
                 >
                   <div className="radio-dot" />
-                  <Icon size={13} style={{ color: sel ? '#c4b5fd' : 'var(--t4)', flexShrink: 0 }} />
-                  <div className="flex-1 min-w-0" style={{ position: 'relative', zIndex: 1 }}>
-                    <div className="text-xs font-semibold" style={{ color: sel ? '#ede9fe' : 'var(--t2)' }}>
+                  <Icon size={13} style={{ color: saveFormat === fmt.value ? '#a78bfa' : 'var(--text3)', flexShrink: 0 }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium" style={{ color: saveFormat === fmt.value ? '#ede9fe' : 'var(--text2)' }}>
                       {fmt.label}
                     </div>
-                    <div className="text-[10px]" style={{ color: 'var(--t4)' }}>{fmt.ext}</div>
+                    <div className="text-xs" style={{ color: 'var(--text3)' }}>{fmt.ext}</div>
                   </div>
                 </label>
               )
@@ -202,22 +195,18 @@ export default function Sidebar({
           </button>
 
           {lastSavedPath && (
-            <p className="text-[11px] mt-2 truncate flex items-center gap-1.5 anim-fade-in" style={{ color: '#34d399' }}>
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
-                style={{ background: '#34d399', boxShadow: '0 0 6px #34d399' }}
-              />
-              {lastSavedPath.split('/').pop()}
+            <p className="text-xs mt-2 truncate" style={{ color: '#34d399' }}>
+              ✓ {lastSavedPath.split('/').pop()}
             </p>
           )}
         </div>
       </div>
 
       {/* ── Bottom ── */}
-      <div className="p-3" style={{ borderTop: '1px solid var(--b1)' }}>
+      <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
         <button
           onClick={onNewSession}
-          className="nav-item w-full text-[12px]"
+          className="nav-item w-full"
           style={{ color: '#f87171' }}
         >
           <Trash2 size={13} />
