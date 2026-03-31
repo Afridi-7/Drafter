@@ -53,23 +53,25 @@ export default function Sidebar({
 
   return (
     <aside
-      className="w-[220px] shrink-0 flex flex-col h-full overflow-hidden"
-      style={{ background: 'var(--surface2)', borderRight: '1px solid var(--border)' }}
+      className="w-[240px] shrink-0 flex flex-col h-full overflow-hidden"
+      style={{ 
+        background: 'rgba(32,32,74,0.85)', 
+        backdropFilter: 'blur(12px)',
+        borderRight: '1px solid var(--b1)',
+        boxShadow: 'inset -1px 0 0 rgba(167,139,250,0.08)'
+      }}
     >
       {/* Logo */}
-      <div className="px-4 pt-5 pb-4">
-        <div className="flex items-center gap-2.5 mb-0.5">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center"
-            style={{ background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.3)' }}
-          >
-            <Feather size={14} style={{ color: '#a78bfa' }} />
+      <div className="px-5 pt-6 pb-5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="logo-icon">
+            <Feather size={16} style={{ color: '#c4b5fd' }} />
           </div>
-          <span className="font-serif italic text-lg" style={{ color: 'var(--text1)' }}>
+          <span className="font-serif italic text-xl gradient-text-static" style={{ color: 'var(--t1)' }}>
             Drafter
           </span>
         </div>
-        <p className="text-xs pl-9" style={{ color: 'var(--text3)' }}>AI writing assistant</p>
+        <p className="text-xs pl-11" style={{ color: 'var(--t4)' }}>AI writing assistant</p>
       </div>
 
       <div

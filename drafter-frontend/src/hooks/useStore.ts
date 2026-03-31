@@ -1,5 +1,5 @@
 // src/hooks/useStore.ts
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { api, triggerDownload } from '../api/client'
 
 export interface ChatMessage {
@@ -23,20 +23,65 @@ export interface AppState {
   lastSavedPath:   string
 }
 
+interface PersistedState {
+  chatMessages:    ChatMessage[]
+  documentContent: string
+  documentTitle:   string
+}
+
+const STORAGE_KEY = 'drafter_state'
+
+const loadFromStorage = (): Partial<PersistedState> => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return {}
+    const parsed = JSON.parse(stored) as PersistedState
+    return {
+      chatMessages: parsed.chatMessages.map(m => ({
+        ...m,
+        timestamp: new Date(m.timestamp)
+      })),
+      documentContent: parsed.documentContent,
+      documentTitle: parsed.documentTitle,
+    }
+  } catch {
+    return {}
+  }
+}
+
+const saveToStorage = (state: Partial<PersistedState>) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Silently fail if storage is full or unavailable
+  }
+}
+
 export function useStore() {
-  const [state, setState] = useState<AppState>({
-    sessionId:       null,
-    loading:         false,
-    initializing:    true,
-    error:           null,
-    chatMessages:    [],
-    documentContent: '',
-    documentTitle:   'Untitled Document',
-    undoCount:       0,
-    redoCount:       0,
-    lastSavedPath:   '',
+  const [state, setState] = useState<AppState>(() => {
+    const persisted = loadFromStorage()
+    return {
+      sessionId:       null,
+      loading:         false,
+      initializing:    true,
+      error:           null,
+      chatMessages:    persisted.chatMessages || [],
+      documentContent: persisted.documentContent || '',
+      documentTitle:   persisted.documentTitle || 'Untitled Document',
+      undoCount:       0,
+      redoCount:       0,
+      lastSavedPath:   '',
+    }
   })
   const initRef = useRef(false)
+
+  useEffect(() => {
+    saveToStorage({
+      chatMessages: state.chatMessages,
+      documentContent: state.documentContent,
+      documentTitle: state.documentTitle,
+    })
+  }, [state.chatMessages, state.documentContent, state.documentTitle])
 
   const initialize = useCallback(async () => {
     if (initRef.current) return
@@ -105,11 +150,19 @@ export function useStore() {
   const resetSession = useCallback(async () => {
     if (state.sessionId) await api.deleteSession(state.sessionId).catch(() => {})
     initRef.current = false
-    setState({
+    
+    const freshState = {
       sessionId: null, loading: false, initializing: true, error: null,
       chatMessages: [], documentContent: '', documentTitle: 'Untitled Document',
       undoCount: 0, redoCount: 0, lastSavedPath: '',
+    }
+    setState(freshState)
+    saveToStorage({
+      chatMessages: [],
+      documentContent: '',
+      documentTitle: 'Untitled Document',
     })
+    
     setTimeout(async () => {
       initRef.current = false
       try {

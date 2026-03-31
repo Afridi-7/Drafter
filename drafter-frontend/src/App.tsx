@@ -17,26 +17,26 @@ function LoadingScreen() {
       style={{ background: 'var(--bg)' }}
     >
       {/* Ambient orbs */}
-      <div className="orb orb-violet" style={{ top: '20%', left: '25%', animationDelay: '0s' }} />
-      <div className="orb orb-pink"   style={{ bottom: '25%', right: '20%', animationDelay: '-4s' }} />
+      <div className="orb orb-violet" style={{ top: '15%', left: '20%', animationDelay: '0s' }} />
+      <div className="orb orb-pink"   style={{ bottom: '20%', right: '15%', animationDelay: '-4s' }} />
 
       <div className="relative z-10 flex flex-col items-center anim-scale-in">
         <div
-          className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 anim-float"
+          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 anim-float"
           style={{
-            background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(236,72,153,0.15))',
-            border: '1px solid rgba(139,92,246,0.4)',
-            boxShadow: '0 0 40px rgba(124,58,237,0.3)',
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.4), rgba(244,114,182,0.3))',
+            border: '1px solid rgba(167,139,250,0.6)',
+            boxShadow: '0 0 60px rgba(139,92,246,0.5), inset 0 1px 0 rgba(255,255,255,0.15)',
           }}
         >
-          <span style={{ fontSize: '30px' }}>✍️</span>
+          <span style={{ fontSize: '36px' }}>✍️</span>
         </div>
-        <span className="font-serif italic text-2xl mb-1 gradient-text">Drafter</span>
+        <span className="font-serif italic text-3xl mb-2 gradient-text">Drafter</span>
         <div
-          className="flex items-center gap-2 text-sm mt-3"
-          style={{ color: 'var(--t4)' }}
+          className="flex items-center gap-2 text-sm mt-4"
+          style={{ color: 'var(--t3)' }}
         >
-          <Loader2 size={13} className="anim-spin" style={{ color: '#8b5cf6' }} />
+          <Loader2 size={14} className="anim-spin" style={{ color: '#a78bfa' }} />
           Connecting to backend…
         </div>
       </div>
@@ -55,19 +55,19 @@ function ErrorScreen({ message }: { message: string }) {
 
       <div className="relative z-10 anim-scale-in">
         <div
-          className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 mx-auto"
+          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 mx-auto"
           style={{
-            background: 'rgba(244,63,94,0.1)',
-            border: '1px solid rgba(244,63,94,0.25)',
-            boxShadow: '0 0 30px rgba(244,63,94,0.15)',
+            background: 'rgba(244,63,94,0.12)',
+            border: '1px solid rgba(244,63,94,0.3)',
+            boxShadow: '0 0 40px rgba(244,63,94,0.2)',
           }}
         >
-          <WifiOff size={26} style={{ color: '#fb7185' }} />
+          <WifiOff size={32} style={{ color: '#fb7185' }} />
         </div>
-        <h2 className="font-serif italic text-xl mb-2" style={{ color: 'var(--t1)' }}>
+        <h2 className="font-serif italic text-2xl mb-3" style={{ color: 'var(--t1)' }}>
           Connection Failed
         </h2>
-        <p className="text-sm mb-7 max-w-sm leading-relaxed" style={{ color: 'var(--t3)' }}>
+        <p className="text-sm mb-8 max-w-sm leading-relaxed" style={{ color: 'var(--t3)' }}>
           {message}
         </p>
         <button onClick={() => window.location.reload()} className="btn-primary mx-auto">
