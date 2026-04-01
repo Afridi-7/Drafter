@@ -81,12 +81,25 @@ function ErrorScreen({ message }: { message: string }) {
 export default function App() {
   const {
     state, initialize, sendMessage, sendMessageWithSelection, setTitle, updateDocumentContent,
-    handleUndo, handleRedo, resetSession, clearError, saveDocument,
+    handleUndo, handleRedo, resetSession, clearError, saveDocument, connectGmail,
+    disconnectGmail, changeGmailAccount,
+    confirmPendingEmail, cancelPendingEmail,
   } = useStore()
 
   const [activePanel, setActivePanel] = useState<Panel>('chat')
+  const [emailDraft, setEmailDraft] = useState({ to: '', subject: '', body: '' })
 
   useEffect(() => { initialize() }, [initialize])
+
+  useEffect(() => {
+    if (state.pendingEmail) {
+      setEmailDraft({
+        to: state.pendingEmail.to || '',
+        subject: state.pendingEmail.subject || '',
+        body: state.pendingEmail.body || '',
+      })
+    }
+  }, [state.pendingEmail])
 
   const handleQuickAction = (prompt: string) => {
     setActivePanel('chat')
@@ -139,12 +152,9 @@ export default function App() {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      
-      console.log(`✅ Downloaded: ${safe}.${format}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Download failed'
       alert(`Download failed: ${message}`)
-      console.error('Download error:', error)
     }
   }
 
@@ -176,9 +186,13 @@ export default function App() {
           redoCount={state.redoCount}
           lastSavedPath={state.lastSavedPath}
           loading={state.loading}
+          gmailConnected={state.gmailConnected}
           onTitleChange={setTitle}
           onQuickAction={handleQuickAction}
           onSave={handleSave}
+          onConnectGmail={connectGmail}
+          onDisconnectGmail={disconnectGmail}
+          onChangeGmailAccount={changeGmailAccount}
           onNewSession={resetSession}
           onUndo={handleUndo}
           onRedo={handleRedo}
@@ -275,6 +289,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <span
+              className="px-2 py-0.5 rounded-full"
+              style={{
+                color: state.gmailConnected ? '#bbf7d0' : '#fecaca',
+                background: state.gmailConnected ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                border: state.gmailConnected ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)',
+              }}
+            >
+              Gmail: {state.gmailConnected ? 'Connected' : 'Not Connected'}
+            </span>
             {state.loading && (
               <span
                 className="flex items-center gap-1.5 anim-fade-in"
@@ -288,6 +312,83 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {state.pendingEmail && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 px-4"
+          style={{
+            background:
+              'radial-gradient(circle at 18% 18%, rgba(34,197,94,0.2), transparent 42%), radial-gradient(circle at 82% 78%, rgba(14,165,233,0.2), transparent 42%), rgba(2,6,23,0.74)',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          <div
+            className="max-w-2xl w-full rounded-2xl p-5 anim-scale-in"
+            style={{
+              background: 'linear-gradient(155deg, rgba(15,23,42,0.96), rgba(30,41,59,0.95) 60%, rgba(14,116,144,0.9))',
+              border: '1px solid rgba(148,163,184,0.35)',
+              boxShadow: '0 30px 80px rgba(2,6,23,0.65), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}
+          >
+            <p className="text-[11px] uppercase tracking-[0.18em] mb-1" style={{ color: 'rgba(134,239,172,0.9)' }}>
+              Confirm Email Send
+            </p>
+            <h3 className="text-lg font-semibold mb-3" style={{ color: '#eef2ff' }}>
+              Review And Confirm Before Sending
+            </h3>
+
+            <div className="space-y-2 mb-4 text-sm" style={{ color: 'rgba(226,232,240,0.92)' }}>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'rgba(148,163,184,0.95)' }}>Recipient</span>
+                <input
+                  value={emailDraft.to}
+                  onChange={e => setEmailDraft(s => ({ ...s, to: e.target.value }))}
+                  className="input w-full mt-1"
+                  placeholder="recipient@example.com"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'rgba(148,163,184,0.95)' }}>Subject</span>
+                <input
+                  value={emailDraft.subject}
+                  onChange={e => setEmailDraft(s => ({ ...s, subject: e.target.value }))}
+                  className="input w-full mt-1"
+                  placeholder="Email subject"
+                />
+              </label>
+            </div>
+
+            <label className="block mb-4">
+              <span className="text-[11px] uppercase tracking-wide" style={{ color: 'rgba(148,163,184,0.95)' }}>Body</span>
+              <textarea
+                value={emailDraft.body}
+                onChange={e => setEmailDraft(s => ({ ...s, body: e.target.value }))}
+                className="input w-full mt-1 min-h-[180px]"
+                style={{ resize: 'vertical' }}
+                placeholder="Email body"
+              />
+            </label>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => confirmPendingEmail(emailDraft)}
+                disabled={!emailDraft.to.trim() || !emailDraft.body.trim()}
+                className="flex-1 rounded-lg py-2.5 text-sm font-semibold"
+                style={{
+                  color: '#0f172a',
+                  background: 'linear-gradient(135deg, #86efac, #67e8f9)',
+                  opacity: emailDraft.to.trim() && emailDraft.body.trim() ? 1 : 0.5,
+                }}
+              >
+                Confirm & Send
+              </button>
+              <button onClick={cancelPendingEmail} className="btn-ghost flex-1">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

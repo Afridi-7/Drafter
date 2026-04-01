@@ -19,7 +19,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from agent import create_session, send_message
+from agent import create_session, register_email_sender, send_message
 
 load_dotenv()
 
@@ -28,16 +28,14 @@ _sessions: dict[str, dict] = {}
 
 # In-memory OAuth token store (sessionId -> credentials)
 _oauth_tokens: dict[str, Credentials] = {}
+_default_oauth_credentials: Credentials | None = None
 
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-
-# Debug: Print OAuth config on startup
-print(f"[OAuth Config] Client ID: {GOOGLE_CLIENT_ID[:20]}..." if GOOGLE_CLIENT_ID else "[OAuth Config] Client ID: NOT SET")
-print(f"[OAuth Config] Redirect URI: {REDIRECT_URI}")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 app = FastAPI(
     title="Drafter API",
@@ -82,6 +80,7 @@ class SendMessageResponse(BaseModel):
     last_saved_b64: str
     last_saved_format: str
     tool_calls_made: list[str]
+    pending_email: dict[str, str] | None = None
 
 
 class DocumentStateResponse(BaseModel):
@@ -90,6 +89,7 @@ class DocumentStateResponse(BaseModel):
     undo_count: int
     redo_count: int
     last_saved_path: str
+    pending_email: dict[str, str] | None = None
 
 
 class SaveDocumentRequest(BaseModel):
@@ -102,20 +102,52 @@ class SaveDocumentResponse(BaseModel):
     message: str
 
 
-class SendEmailRequest(BaseModel):
-    to: str
-    subject: str
-    body: str
-    session_id: str
+class GmailStatusResponse(BaseModel):
+    connected: bool
 
 
-class SendEmailResponse(BaseModel):
+class PendingEmailActionResponse(BaseModel):
     success: bool
     message: str
 
 
-class GmailStatusResponse(BaseModel):
-    connected: bool
+class PendingEmailConfirmRequest(BaseModel):
+    to: str | None = None
+    subject: str | None = None
+    body: str | None = None
+
+
+def _send_email_with_session(session_id: str, to: str, subject: str, body: str) -> str:
+    """Send email via Gmail API using OAuth token for session or shared login."""
+    credentials = _oauth_tokens.get(session_id) or _default_oauth_credentials
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Gmail not connected. Please authenticate first.")
+
+    # Bind shared credentials to this session for faster future lookups.
+    _oauth_tokens[session_id] = credentials
+
+    try:
+        service = build("gmail", "v1", credentials=credentials)
+
+        message = MIMEText(body)
+        message["to"] = to
+        message["subject"] = subject
+
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        send_result = service.users().messages().send(
+            userId="me",
+            body={"raw": raw_message}
+        ).execute()
+
+        return f"Email sent successfully! Message ID: {send_result.get('id')}"
+    except HttpError as error:
+        raise HTTPException(status_code=500, detail=f"Gmail API error: {str(error)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+# Let the AI tool in agent.py send emails through this callback.
+register_email_sender(_send_email_with_session)
 
 
 #  Routes 
@@ -157,6 +189,7 @@ def send_session_message(session_id: str, body: SendMessageRequest):
         last_saved_b64=result.get("last_saved_b64", ""),
         last_saved_format=result.get("last_saved_format", ""),
         tool_calls_made=result["tool_calls_made"],
+        pending_email=result.get("pending_email"),
     )
     
     return response
@@ -173,6 +206,7 @@ def get_document(session_id: str):
         undo_count=len(state.get("document_history", [])),
         redo_count=len(state.get("redo_stack", [])),
         last_saved_path=state.get("last_saved_path", ""),
+        pending_email=state.get("pending_email"),
     )
 
 
@@ -317,6 +351,7 @@ def send_session_message_stream(session_id: str, body: SendMessageRequest):
             "undo_count": len(result.get("document_history", [])),
             "redo_count": len(result.get("redo_stack", [])),
             "last_saved_path": result["last_saved_path"],
+            "pending_email": result.get("pending_email"),
         }
         yield f"data: {json.dumps(completion)}\n\n"
     
@@ -379,6 +414,7 @@ def send_session_message_selection_stream(session_id: str, body: SendMessageWith
             "undo_count": len(result.get("document_history", [])),
             "redo_count": len(result.get("redo_stack", [])),
             "last_saved_path": result["last_saved_path"],
+            "pending_email": result.get("pending_email"),
         }
         yield f"data: {json.dumps(completion)}\n\n"
     
@@ -413,9 +449,6 @@ def google_login(session_id: str):
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
     
-    print(f"[OAuth] Starting login flow with redirect URI: {REDIRECT_URI}")
-    print(f"[OAuth] Session ID: {session_id}")
-    
     flow = Flow.from_client_config(
         {
             "web": {
@@ -433,23 +466,28 @@ def google_login(session_id: str):
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        prompt="consent select_account",
     )
     
-    print(f"[OAuth] Authorization URL: {authorization_url}")
-    print(f"[OAuth] State: {state}")
-    
-    # Store session_id in state for callback
-    _sessions[f"oauth_state_{state}"] = {"session_id": session_id}
+    # Store session_id and PKCE verifier in state for callback
+    _sessions[f"oauth_state_{state}"] = {
+        "session_id": session_id,
+        "code_verifier": getattr(flow, "code_verifier", None),
+    }
     
     return RedirectResponse(url=authorization_url)
 
 
 @app.get("/auth/google/callback")
-def google_callback(code: str, state: str):
+def google_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     """Handle OAuth callback and store tokens."""
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
+
+    if error:
+        return RedirectResponse(url=f"{FRONTEND_URL}?gmail_error={error}")
+    if not code or not state:
+        return RedirectResponse(url=f"{FRONTEND_URL}?gmail_error=missing_code_or_state")
     
     # Retrieve session_id from state
     state_data = _sessions.get(f"oauth_state_{state}")
@@ -457,6 +495,7 @@ def google_callback(code: str, state: str):
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
     
     session_id = state_data["session_id"]
+    code_verifier = state_data.get("code_verifier")
     
     flow = Flow.from_client_config(
         {
@@ -471,62 +510,90 @@ def google_callback(code: str, state: str):
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI,
     )
+
+    # Restore PKCE verifier generated during login step.
+    if code_verifier:
+        flow.code_verifier = code_verifier
     
-    flow.fetch_token(code=code)
-    credentials = flow.credentials
+    try:
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+    except Exception as exc:
+        # Avoid exposing internal traceback to user; return a clear marker to frontend.
+        err = str(exc).replace(" ", "_")[:120]
+        return RedirectResponse(url=f"{FRONTEND_URL}?gmail_error=token_exchange_failed:{err}")
     
-    # Store credentials for this session
+    # Store credentials for this session and as default across sessions.
+    global _default_oauth_credentials
     _oauth_tokens[session_id] = credentials
+    _default_oauth_credentials = credentials
     
     # Clean up state
     _sessions.pop(f"oauth_state_{state}", None)
     
-    # Redirect to frontend with success
-    return RedirectResponse(url="http://localhost:5173?gmail_connected=true")
+    # Redirect to frontend with success and bound session id.
+    return RedirectResponse(url=f"{FRONTEND_URL}?gmail_connected=true&oauth_session_id={session_id}")
 
 
 @app.get("/auth/google/status")
 def google_status(session_id: str):
     """Check if Gmail is connected for this session."""
-    connected = session_id in _oauth_tokens
+    connected = (session_id in _oauth_tokens) or (_default_oauth_credentials is not None)
     return GmailStatusResponse(connected=connected)
 
 
-@app.post("/send-email", response_model=SendEmailResponse)
-def send_email(request: SendEmailRequest):
-    """Send email via Gmail API using stored OAuth token."""
-    session_id = request.session_id
-    
-    # Check if user has authenticated
-    if session_id not in _oauth_tokens:
-        raise HTTPException(status_code=401, detail="Gmail not connected. Please authenticate first.")
-    
-    credentials = _oauth_tokens[session_id]
-    
-    try:
-        # Build Gmail service
-        service = build("gmail", "v1", credentials=credentials)
-        
-        # Create email message
-        message = MIMEText(request.body)
-        message["to"] = request.to
-        message["subject"] = request.subject
-        
-        # Encode message
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        
-        # Send email
-        send_result = service.users().messages().send(
-            userId="me",
-            body={"raw": raw_message}
-        ).execute()
-        
-        return SendEmailResponse(
-            success=True,
-            message=f"Email sent successfully! Message ID: {send_result.get('id')}"
-        )
-        
-    except HttpError as error:
-        raise HTTPException(status_code=500, detail=f"Gmail API error: {str(error)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+@app.post("/auth/google/disconnect")
+def google_disconnect(session_id: str):
+    """Disconnect Gmail and clear all in-memory OAuth credentials."""
+    global _default_oauth_credentials
+
+    _oauth_tokens.pop(session_id, None)
+    _oauth_tokens.clear()
+    _default_oauth_credentials = None
+
+    return {"success": True, "message": "Gmail disconnected"}
+
+
+@app.post("/sessions/{session_id}/email/confirm", response_model=PendingEmailActionResponse)
+def confirm_pending_email(session_id: str, body: PendingEmailConfirmRequest | None = None):
+    """Confirm and send pending email draft created by AI."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    pending = state.get("pending_email")
+    if not pending:
+        raise HTTPException(status_code=400, detail="No pending email to confirm")
+
+    to = (body.to if body and body.to is not None else pending.get("to", "")).strip()
+    subject = (body.subject if body and body.subject is not None else pending.get("subject", "")).strip()
+    email_body = (body.body if body and body.body is not None else pending.get("body", "")).strip()
+
+    if not to or "@" not in to:
+        raise HTTPException(status_code=400, detail="Invalid recipient email")
+    if not email_body:
+        raise HTTPException(status_code=400, detail="Email body cannot be empty")
+
+    message = _send_email_with_session(
+        session_id=session_id,
+        to=to,
+        subject=subject,
+        body=email_body,
+    )
+
+    state["pending_email"] = None
+    return PendingEmailActionResponse(success=True, message=message)
+
+
+@app.post("/sessions/{session_id}/email/cancel", response_model=PendingEmailActionResponse)
+def cancel_pending_email(session_id: str):
+    """Cancel pending email draft created by AI."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    if not state.get("pending_email"):
+        return PendingEmailActionResponse(success=True, message="No pending email to cancel")
+
+    state["pending_email"] = None
+    return PendingEmailActionResponse(success=True, message="Pending email canceled")

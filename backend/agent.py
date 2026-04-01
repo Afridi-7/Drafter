@@ -7,7 +7,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Sequence, TypedDict
+from typing import Annotated, Any, Callable, Sequence, TypedDict
 from dotenv import load_dotenv
 from langchain_core.messages import (
     AIMessage,
@@ -35,6 +35,7 @@ _local = threading.local()
 def _ctx() -> dict:
     if not hasattr(_local, "data"):
         _local.data = {
+            "session_id": "",
             "document_content": "",
             "document_history": [],
             "redo_stack": [],
@@ -42,8 +43,18 @@ def _ctx() -> dict:
             "last_saved_path": "",
             "last_saved_b64": "",
             "last_saved_format": "",
+            "pending_email": None,
         }
     return _local.data
+
+
+_email_sender: Callable[[str, str, str, str], str] | None = None
+
+
+def register_email_sender(sender: Callable[[str, str, str, str], str]) -> None:
+    """Register callback used by send_email_via_gmail(session_id, to, subject, body)."""
+    global _email_sender
+    _email_sender = sender
 
 
 def _push_history(new_content: str) -> None:
@@ -61,6 +72,7 @@ def _push_history(new_content: str) -> None:
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    session_id: str
     document_content: str
     document_history: list[str]
     redo_stack: list[str]
@@ -68,6 +80,7 @@ class AgentState(TypedDict):
     last_saved_path: str
     last_saved_b64: str
     last_saved_format: str
+    pending_email: dict[str, str] | None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -321,6 +334,73 @@ def save_document(filename: str, format: str = "md") -> str:
     return message
 
 
+@tool
+def send_email_via_gmail(to: str, subject: str = "", body: str = "") -> str:
+    """Send an email using the session's connected Gmail account.
+
+    If subject/body are omitted, document title/content are used.
+    """
+    ctx = _ctx()
+    session_id = ctx.get("session_id", "")
+
+    if not session_id:
+        return "❌ No active session found for email sending."
+    if _email_sender is None:
+        return "❌ Gmail sender is not configured on server."
+    if "@" not in to:
+        return "❌ Invalid recipient email address."
+
+    resolved_subject = (subject or "").strip() or ctx.get("document_title", "Draft from Drafter")
+    resolved_body = (body or "").strip() or ctx.get("document_content", "")
+    if not resolved_body:
+        return "❌ Email body is empty. Add content to the document or provide a body explicitly."
+
+    try:
+        result_message = _email_sender(session_id, to.strip(), resolved_subject, resolved_body)
+        ctx["pending_email"] = None
+        return f"✅ {result_message}"
+    except Exception as exc:
+        return f"❌ Failed to send email: {exc}"
+
+
+@tool
+def prepare_email_send(to: str, subject: str = "", body: str = "") -> str:
+    """Prepare an email draft and store it for confirmation in the UI before sending."""
+    ctx = _ctx()
+    if "@" not in to:
+        return "❌ Invalid recipient email address."
+
+    resolved_subject = (subject or "").strip() or ctx.get("document_title", "Draft from Drafter")
+    resolved_body = (body or "").strip() or ctx.get("document_content", "")
+    if not resolved_body:
+        return "❌ Email body is empty. Add content to the document or provide a body explicitly."
+
+    ctx["pending_email"] = {
+        "to": to.strip(),
+        "subject": resolved_subject,
+        "body": resolved_body,
+    }
+
+    preview = resolved_body[:160] + ("..." if len(resolved_body) > 160 else "")
+    return (
+        "📨 Email draft is ready for confirmation.\n"
+        f"To: {to.strip()}\n"
+        f"Subject: {resolved_subject}\n"
+        f"Body preview: {preview}\n"
+        "Please confirm send in the popup."
+    )
+
+
+@tool
+def cancel_pending_email() -> str:
+    """Cancel any pending email draft waiting for confirmation."""
+    ctx = _ctx()
+    if not ctx.get("pending_email"):
+        return "ℹ️ No pending email draft to cancel."
+    ctx["pending_email"] = None
+    return "✅ Pending email draft canceled."
+
+
 # ── Tool registry ─────────────────────────────────────────────────────────────
 TOOLS = [
     update_document,
@@ -333,6 +413,8 @@ TOOLS = [
     get_document_stats,
     save_document,
     replace_selected_text,
+    prepare_email_send,
+    cancel_pending_email,
 ]
 # ── Tool registry ─────────────────────────────────────────────────────────────
 # ── State sync functions ─────────────────────────────────────────────────────────────
@@ -340,6 +422,7 @@ TOOLS = [
 def _sync_ctx_from_state(state: AgentState) -> None:
     """Sync thread-local context from state dict."""
     ctx = _ctx()
+    ctx["session_id"] = state.get("session_id", "")
     ctx["document_content"] = state.get("document_content", "")
     ctx["document_history"] = list(state.get("document_history", []))
     ctx["redo_stack"] =list(state.get("redo_stack", []))
@@ -347,12 +430,14 @@ def _sync_ctx_from_state(state: AgentState) -> None:
     ctx["last_saved_path"] = state.get("last_saved_path", "")
     ctx["last_saved_b64"] = state.get("last_saved_b64", "")
     ctx["last_saved_format"] = state.get("last_saved_format", "")
+    ctx["pending_email"] = state.get("pending_email", None)
 
 
 def _sync_state_from_ctx() -> dict:
     """Sync state dict from thread-local context."""
     ctx = _ctx()
     return {
+        "session_id": ctx["session_id"],
         "document_content": ctx["document_content"],
         "document_history": ctx["document_history"],
         "redo_stack": ctx["redo_stack"],
@@ -360,6 +445,7 @@ def _sync_state_from_ctx() -> dict:
         "last_saved_path": ctx["last_saved_path"],
         "last_saved_b64": ctx["last_saved_b64"],
         "last_saved_format": ctx["last_saved_format"],
+        "pending_email": ctx.get("pending_email", None),
     }
 
 
@@ -383,7 +469,7 @@ def agent_node(state: AgentState) -> dict:
     )
 
     system = SystemMessage(
-        content=f"""You are Drafter — an exer_t writing assistant. You P_RIMARY JOB is to write content into a document using your tools.
+        content=f"""You are Drafter — an expert writing assistant. Your PRIMARY JOB is to write content into a document using your tools.
 
 ═══ CURRENT DOCUMENT ═══
 {preview if preview else "(empty — awaiting content)"}
@@ -405,7 +491,10 @@ DOCUMENT INFO:
 • undo_last_change()               → Undo last change
 • redo_last_change()               → Redo last change
 • get_document_stats()             → Get word count, reading time
-• save_document(name, format)      → Save as .txt, .md, or .docx
+• save_document(name, format)      → Save as .txt, .md, .docx, or .pdf
+• prepare_email_send(to, subject, body) → Create a pending email draft for confirmation popup
+• cancel_pending_email()           → Cancel pending email draft
+• send_email_via_gmail(to, subject, body) → Direct send (use only if user explicitly asks to skip confirmation)
 
 ⚠️ CRITICAL RULES - READ CAREFULLY:
 1. **YOU MUST USE TOOLS TO WRITE CONTENT** - When the user asks you to write, draft, create, or generate ANY content (emails, letters, blog posts, etc.), you MUST call update_document() or append_to_document() with the ACTUAL content. DO NOT just describe what you would write - WRITE IT using the tool!
@@ -425,8 +514,9 @@ DOCUMENT INFO:
 5. After calling a tool, briefly confirm what you did and suggest next steps.
 
 6. When user asks to save/download, call save_document with appropriate format.
-
-7. Use Markdown formatting in your content for better readability.
+7. When user asks to send email, call prepare_email_send first so user can confirm in popup.
+8. Use send_email_via_gmail only if user explicitly says to send immediately without confirmation.
+9. Use Markdown formatting in your content for better readability.
 
 REMEMBER: Your tools are how you actually create content for the user. Always use them when writing!
 """
@@ -538,6 +628,7 @@ def send_message(
     if not state or "messages" not in state:
         state = {
             "messages": [],
+            "session_id": session_id,
             "document_content": "",
             "document_history": [],
             "redo_stack": [],
@@ -545,9 +636,11 @@ def send_message(
             "last_saved_path": "",
             "last_saved_b64": "",
             "last_saved_format": "",
+            "pending_email": None,
         }
     
     # Ensure all required fields exist in state
+    state.setdefault("session_id", session_id)
     state.setdefault("document_content", "")
     state.setdefault("document_history", [])
     state.setdefault("redo_stack", [])
@@ -555,9 +648,13 @@ def send_message(
     state.setdefault("last_saved_path", "")
     state.setdefault("last_saved_b64", "")
     state.setdefault("last_saved_format", "")
+    state.setdefault("pending_email", None)
+
+    initial_document_content = state.get("document_content", "")
     
     # Initialize context for this session
     _local.data = {
+        "session_id": session_id,
         "document_content": state.get("document_content", ""),
         "document_history": list(state.get("document_history", [])),
         "redo_stack": list(state.get("redo_stack", [])),
@@ -565,6 +662,7 @@ def send_message(
         "last_saved_path": state.get("last_saved_path", ""),
         "last_saved_b64": state.get("last_saved_b64", ""),
         "last_saved_format": state.get("last_saved_format", ""),
+        "pending_email": state.get("pending_email", None),
     }
 
     state["messages"] = list(state.get("messages", [])) + [
@@ -600,37 +698,45 @@ def send_message(
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 tool_calls_made = [tc["name"] for tc in msg.tool_calls]
             break
-    
 
-    
-    # Check if user asked to write/create/draft but AI didn't use tools
-    write_keywords = ["write", "draft", "create", "compose", "generate", "make me", "email", "letter", "blog", "post"]
-    user_wants_content = any(keyword in user_message.lower() for keyword in write_keywords)
-    
+    # Keep chat concise when the assistant updated the document via tools.
+    document_edit_tools = {
+        "update_document",
+        "append_to_document",
+        "prepend_to_document",
+        "replace_section",
+        "insert_after_section",
+        "replace_selected_text",
+    }
+    if any(t in document_edit_tools for t in tool_calls_made):
+        ai_response = "✅ Updated the document. Review it in the document panel."
 
+    # Fallback: even if tool names are missing, do not duplicate long generated content in chat
+    # when the document content has changed.
+    final_document_content = final_state.get("document_content", "")
+    if final_document_content != initial_document_content:
+        ai_response = "✅ Updated the document. Review it in the document panel."
+
+    # Guarantee popup workflow for send-email intents, even if model skipped tool call.
+    if not final_state.get("pending_email"):
+        lower_msg = user_message.lower()
+        wants_email = ("send" in lower_msg and "email" in lower_msg) or ("email" in lower_msg and "to " in lower_msg)
+        if wants_email:
+            email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", user_message)
+            if email_match:
+                to = email_match.group(0)
+                subject = final_state.get("document_title", "Draft from Drafter")
+                body = final_state.get("document_content", "")
+                if body:
+                    final_state["pending_email"] = {
+                        "to": to,
+                        "subject": subject,
+                        "body": body,
+                    }
+                    if "prepare_email_send" not in tool_calls_made:
+                        tool_calls_made.append("prepare_email_send(auto)")
+                    ai_response = "I've prepared the email for you. Please confirm the send in the popup."
     
-    if user_wants_content and not tool_calls_made:
-
-        
-        # Force the AI to use tools by adding a very strong message
-        force_msg = HumanMessage(
-            content="STOP! You MUST call the update_document tool RIGHT NOW. Don't explain, don't describe - just call update_document(content='...') with the FULL email/letter content. Do it NOW."
-        )
-        final_state["messages"].append(force_msg)
-        
-        # Run one more iteration
-        for step in _graph.stream(final_state, config=config, stream_mode="values"):
-            final_state = step
-        
-        # Re-extract the response
-        for msg in reversed(final_state["messages"]):
-            if isinstance(msg, AIMessage):
-                if msg.content:
-                    ai_response = msg.content
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    tool_calls_made = [tc["name"] for tc in msg.tool_calls]
-
-                break
 
     result = {
         "ai_response": ai_response,
@@ -640,6 +746,7 @@ def send_message(
         "last_saved_path": final_state.get("last_saved_path", ""),
         "last_saved_b64": final_state.get("last_saved_b64", ""),
         "last_saved_format": final_state.get("last_saved_format", ""),
+        "pending_email": final_state.get("pending_email", None),
         "tool_calls_made": tool_calls_made,
         "state": final_state,
     }

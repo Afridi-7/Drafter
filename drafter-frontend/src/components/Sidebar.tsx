@@ -27,9 +27,13 @@ interface SidebarProps {
   redoCount:     number
   lastSavedPath: string
   loading:       boolean
+  gmailConnected: boolean
   onTitleChange: (t: string) => void
   onQuickAction: (prompt: string) => void
   onSave:        (format: string) => void
+  onConnectGmail: () => void
+  onDisconnectGmail: () => void
+  onChangeGmailAccount: () => void
   onNewSession:  () => void
   onUndo:        () => void
   onRedo:        () => void
@@ -37,7 +41,7 @@ interface SidebarProps {
 
 export default function Sidebar({
   documentTitle, undoCount, redoCount, lastSavedPath,
-  loading, onTitleChange, onQuickAction, onSave, onNewSession,
+  loading, gmailConnected, onTitleChange, onQuickAction, onSave, onConnectGmail, onDisconnectGmail, onChangeGmailAccount, onNewSession,
   onUndo, onRedo,
 }: SidebarProps) {
   const [saveFormat,    setSaveFormat]    = useState('md')
@@ -200,6 +204,52 @@ export default function Sidebar({
               ✓ {lastSavedPath.split('/').pop()}
             </p>
           )}
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="sidebar-label">Gmail OAuth</p>
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full"
+                style={{
+                  color: gmailConnected ? '#bbf7d0' : '#fecaca',
+                  background: gmailConnected ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                  border: gmailConnected ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)',
+                }}
+              >
+                {gmailConnected ? 'Connected' : 'Not Connected'}
+              </span>
+            </div>
+
+            <button
+              onClick={onConnectGmail}
+              className="btn-ghost w-full text-xs py-2"
+              disabled={loading || gmailConnected}
+            >
+              {gmailConnected ? 'Gmail Connected' : 'Connect Gmail'}
+            </button>
+            {gmailConnected && (
+              <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                <button
+                  onClick={onChangeGmailAccount}
+                  className="btn-ghost text-xs py-1.5"
+                  disabled={loading}
+                >
+                  Change Account
+                </button>
+                <button
+                  onClick={onDisconnectGmail}
+                  className="btn-ghost text-xs py-1.5"
+                  disabled={loading}
+                  style={{ color: '#fca5a5' }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: 'var(--text3)' }}>
+              After connecting, ask AI: "Send this to recipient@example.com"
+            </p>
+          </div>
         </div>
       </div>
 

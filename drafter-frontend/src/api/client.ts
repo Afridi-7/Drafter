@@ -13,6 +13,13 @@ export interface MessageResponse {
   last_saved_b64: string
   last_saved_format: string
   tool_calls_made: string[]
+  pending_email?: PendingEmail | null
+}
+
+export interface PendingEmail {
+  to: string
+  subject: string
+  body: string
 }
 
 export interface DocumentState {
@@ -21,6 +28,7 @@ export interface DocumentState {
   undo_count: number
   redo_count: number
   last_saved_path: string
+  pending_email?: PendingEmail | null
 }
 
 export interface SaveResponse {
@@ -34,23 +42,26 @@ export interface GmailStatusResponse {
   connected: boolean
 }
 
-export interface SendEmailRequest {
-  to: string
-  subject: string
-  body: string
-  session_id: string
-}
-
-export interface SendEmailResponse {
+export interface GmailDisconnectResponse {
   success: boolean
   message: string
+}
+
+export interface PendingEmailActionResponse {
+  success: boolean
+  message: string
+}
+
+export interface PendingEmailConfirmRequest {
+  to?: string
+  subject?: string
+  body?: string
 }
 
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  console.log(`[API] Calling ${path}`, options?.method || 'GET')
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
@@ -65,6 +76,9 @@ async function request<T>(
 export const api = {
   createSession: () =>
     request<SessionResponse>('/sessions', { method: 'POST' }),
+
+  getDocument: (sessionId: string) =>
+    request<DocumentState>(`/sessions/${sessionId}/document`),
 
   sendMessage: (
     sessionId: string,
@@ -210,9 +224,19 @@ export const api = {
   checkGmailStatus: (sessionId: string) =>
     request<GmailStatusResponse>(`/auth/google/status?session_id=${sessionId}`),
 
-  sendEmail: (data: SendEmailRequest) =>
-    request<SendEmailResponse>('/send-email', {
+  disconnectGmail: (sessionId: string) =>
+    request<GmailDisconnectResponse>(`/auth/google/disconnect?session_id=${sessionId}`, {
       method: 'POST',
-      body: JSON.stringify(data),
+    }),
+
+  confirmPendingEmail: (sessionId: string, payload?: PendingEmailConfirmRequest) =>
+    request<PendingEmailActionResponse>(`/sessions/${sessionId}/email/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
+
+  cancelPendingEmail: (sessionId: string) =>
+    request<PendingEmailActionResponse>(`/sessions/${sessionId}/email/cancel`, {
+      method: 'POST',
     }),
 }

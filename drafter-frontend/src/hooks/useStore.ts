@@ -1,5 +1,17 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
+
+interface PendingEmail {
+  to: string
+  subject: string
+  body: string
+}
+
+interface PendingEmailOverrides {
+  to?: string
+  subject?: string
+  body?: string
+}
 
 export interface ChatMessage {
   id:        string
@@ -21,90 +33,57 @@ export interface AppState {
   redoCount:       number
   lastSavedPath:   string
   gmailConnected:  boolean
-}
-
-interface PersistedState {
-  chatMessages:    ChatMessage[]
-  documentContent: string
-  documentTitle:   string
-}
-
-const STORAGE_KEY = 'drafter_state'
-
-const loadFromStorage = (): Partial<PersistedState> => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return {}
-    const parsed = JSON.parse(stored) as PersistedState
-    return {
-      chatMessages: parsed.chatMessages.map(m => ({
-        ...m,
-        timestamp: new Date(m.timestamp)
-      })),
-      documentContent: parsed.documentContent || '',
-      documentTitle: parsed.documentTitle || 'Untitled Document',
-    }
-  } catch {
-    return {}
-  }
-}
-
-const saveToStorage = (state: Partial<PersistedState>) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // Silently fail if storage is full or unavailable
-  }
+  pendingEmail:    PendingEmail | null
 }
 
 export function useStore() {
-  const [state, setState] = useState<AppState>(() => {
-    const persisted = loadFromStorage()
-    return {
-      sessionId:       null,
-      loading:         false,
-      initializing:    true,
-      error:           null,
-      chatMessages:    persisted.chatMessages || [],
-      documentContent: persisted.documentContent || '',
-      documentTitle:   persisted.documentTitle || 'Untitled Document',
-      undoCount:       0,
-      redoCount:       0,
-      lastSavedPath:   '',
-      gmailConnected:  false,
-    }
+  const [state, setState] = useState<AppState>({
+    sessionId:       null,
+    loading:         false,
+    initializing:    true,
+    error:           null,
+    chatMessages:    [],
+    documentContent: '',
+    documentTitle:   'Untitled Document',
+    undoCount:       0,
+    redoCount:       0,
+    lastSavedPath:   '',
+    gmailConnected:  false,
+    pendingEmail:    null,
   })
   const initRef = useRef(false)
-
-  // Persist to localStorage whenever state changes
-  useEffect(() => {
-    saveToStorage({
-      chatMessages: state.chatMessages,
-      documentContent: state.documentContent,
-      documentTitle: state.documentTitle,
-    })
-  }, [state.chatMessages, state.documentContent, state.documentTitle])
 
   const initialize = useCallback(async () => {
     if (initRef.current) return
     initRef.current = true
     try {
-      const { session_id } = await api.createSession()
-      setState(s => ({ ...s, sessionId: session_id, initializing: false }))
-      
-      // Check Gmail connection status
+      const params = new URLSearchParams(window.location.search)
+      const oauthSessionId = params.get('oauth_session_id')
+
+      // If OAuth callback provided a bound session, reuse it.
+      const sessionId = oauthSessionId || (await api.createSession()).session_id
+
+      setState(s => ({ ...s, sessionId, initializing: false }))
+
+      // Check Gmail connection status for the active session.
       try {
-        const gmailStatus = await api.checkGmailStatus(session_id)
+        const gmailStatus = await api.checkGmailStatus(sessionId)
         setState(s => ({ ...s, gmailConnected: gmailStatus.connected }))
       } catch {
         // Gmail status check failed, keep as false
       }
-      
-      // Check for OAuth callback success
-      const params = new URLSearchParams(window.location.search)
+
+      // Handle OAuth callback query params.
       if (params.get('gmail_connected') === 'true') {
         setState(s => ({ ...s, gmailConnected: true }))
-        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname)
+      } else if (params.get('gmail_error')) {
+        const reason = params.get('gmail_error') || 'unknown_error'
+        setState(s => ({
+          ...s,
+          gmailConnected: false,
+          error: `Gmail connection failed: ${reason}`,
+        }))
         window.history.replaceState({}, '', window.location.pathname)
       }
     } catch {
@@ -157,7 +136,26 @@ export function useStore() {
             undoCount: data.undo_count ?? s.undoCount,
             redoCount: data.redo_count ?? s.redoCount,
             lastSavedPath: data.last_saved_path || s.lastSavedPath,
+            pendingEmail: data.pending_email ?? s.pendingEmail,
           }))
+
+          // Fallback: if stream payload omitted pending_email, pull latest state from backend.
+          if (state.sessionId && data.pending_email === undefined) {
+            void api.getDocument(state.sessionId)
+              .then(doc => {
+                if (doc.pending_email) {
+                  setState(s => ({
+                    ...s,
+                    pendingEmail: {
+                      to: doc.pending_email!.to,
+                      subject: doc.pending_email!.subject,
+                      body: doc.pending_email!.body,
+                    },
+                  }))
+                }
+              })
+              .catch(() => {})
+          }
         },
         (error: string) => {
           setState(s => ({ ...s, loading: false, error }))
@@ -218,7 +216,26 @@ export function useStore() {
             undoCount: data.undo_count ?? s.undoCount,
             redoCount: data.redo_count ?? s.redoCount,
             lastSavedPath: data.last_saved_path || s.lastSavedPath,
+            pendingEmail: data.pending_email ?? s.pendingEmail,
           }))
+
+          // Fallback: if stream payload omitted pending_email, pull latest state from backend.
+          if (state.sessionId && data.pending_email === undefined) {
+            void api.getDocument(state.sessionId)
+              .then(doc => {
+                if (doc.pending_email) {
+                  setState(s => ({
+                    ...s,
+                    pendingEmail: {
+                      to: doc.pending_email!.to,
+                      subject: doc.pending_email!.subject,
+                      body: doc.pending_email!.body,
+                    },
+                  }))
+                }
+              })
+              .catch(() => {})
+          }
         },
         (error: string) => {
           setState(s => ({ ...s, loading: false, error }))
@@ -264,20 +281,23 @@ export function useStore() {
       redoCount: 0,
       lastSavedPath: '',
       gmailConnected: false,
+      pendingEmail: null,
     }
     setState(freshState)
-    saveToStorage({
-      chatMessages: [],
-      documentContent: '',
-      documentTitle: 'Untitled Document',
-    })
 
     // Delay re-init to ensure clean state
     setTimeout(async () => {
       initRef.current = false
       try {
         const { session_id } = await api.createSession()
-        setState(s => ({ ...s, sessionId: session_id, initializing: false }))
+        let gmailConnected = false
+        try {
+          const gmailStatus = await api.checkGmailStatus(session_id)
+          gmailConnected = gmailStatus.connected
+        } catch {
+          gmailConnected = false
+        }
+        setState(s => ({ ...s, sessionId: session_id, initializing: false, gmailConnected }))
       } catch {
         setState(s => ({ ...s, initializing: false }))
       }
@@ -312,30 +332,60 @@ export function useStore() {
     window.location.href = loginUrl
   }, [state.sessionId])
 
-  const sendEmail = useCallback(
-    async (to: string, subject: string, body: string): Promise<void> => {
-      if (!state.sessionId) throw new Error('No active session')
-      if (!state.gmailConnected) throw new Error('Gmail not connected')
-      
-      try {
-        const result = await api.sendEmail({
-          to,
-          subject,
-          body,
-          session_id: state.sessionId,
-        })
-        
-        if (!result.success) {
-          throw new Error(result.message)
-        }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : 'Failed to send email'
-        setState(s => ({ ...s, error: msg }))
-        throw e
-      }
-    },
-    [state.sessionId, state.gmailConnected]
-  )
+  const disconnectGmail = useCallback(async () => {
+    if (!state.sessionId) {
+      setState(s => ({ ...s, error: 'No active session' }))
+      return
+    }
+    try {
+      await api.disconnectGmail(state.sessionId)
+      setState(s => ({ ...s, gmailConnected: false }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to disconnect Gmail'
+      setState(s => ({ ...s, error: msg }))
+    }
+  }, [state.sessionId])
+
+  const changeGmailAccount = useCallback(() => {
+    connectGmail()
+  }, [connectGmail])
+
+  const confirmPendingEmail = useCallback(async (overrides?: PendingEmailOverrides): Promise<void> => {
+    if (!state.sessionId) throw new Error('No active session')
+    try {
+      const result = await api.confirmPendingEmail(state.sessionId, overrides)
+      if (!result.success) throw new Error(result.message)
+      setState(s => ({
+        ...s,
+        pendingEmail: null,
+        chatMessages: [
+          ...s.chatMessages,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `✅ ${result.message}`,
+            timestamp: new Date(),
+          },
+        ],
+      }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to confirm email send'
+      setState(s => ({ ...s, error: msg }))
+      throw e
+    }
+  }, [state.sessionId])
+
+  const cancelPendingEmail = useCallback(async (): Promise<void> => {
+    if (!state.sessionId) throw new Error('No active session')
+    try {
+      await api.cancelPendingEmail(state.sessionId)
+      setState(s => ({ ...s, pendingEmail: null }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to cancel email'
+      setState(s => ({ ...s, error: msg }))
+      throw e
+    }
+  }, [state.sessionId])
 
   return {
     state,
@@ -350,6 +400,9 @@ export function useStore() {
     clearError,
     saveDocument,
     connectGmail,
-    sendEmail,
+    disconnectGmail,
+    changeGmailAccount,
+    confirmPendingEmail,
+    cancelPendingEmail,
   }
 }
