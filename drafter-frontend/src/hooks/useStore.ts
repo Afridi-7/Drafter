@@ -108,30 +108,44 @@ export function useStore() {
       content: message,
       timestamp: new Date(),
     }
-    setState(s => ({ ...s, chatMessages: [...s.chatMessages, userMsg] }))
+
+    const aiMsgId = crypto.randomUUID()
+    const aiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    }
+
+    setState(s => ({ ...s, chatMessages: [...s.chatMessages, userMsg, aiMsg] }))
 
     try {
-      const res = await api.sendMessage(state.sessionId!, message, state.documentTitle)
-
-      const aiMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: res.ai_response,
-        tools: res.tool_calls_made,
-        timestamp: new Date(),
-      }
-
-      // Update state with fresh document content and counts
-      setState(s => ({
-        ...s,
-        loading: false,
-        chatMessages: [...s.chatMessages, aiMsg],
-        // Ensure document content is updated from response (use ?? to allow empty strings)
-        documentContent: res.document_content ?? s.documentContent,
-        undoCount: res.undo_count ?? s.undoCount,
-        redoCount: res.redo_count ?? s.redoCount,
-        lastSavedPath: res.last_saved_path || s.lastSavedPath,
-      }))
+      await api.sendMessageStream(
+        state.sessionId!,
+        message,
+        state.documentTitle,
+        (char: string) => {
+          setState(s => ({
+            ...s,
+            chatMessages: s.chatMessages.map(m =>
+              m.id === aiMsgId ? { ...m, content: m.content + char } : m
+            ),
+          }))
+        },
+        (data: any) => {
+          setState(s => ({
+            ...s,
+            loading: false,
+            documentContent: data.document_content ?? s.documentContent,
+            undoCount: data.undo_count ?? s.undoCount,
+            redoCount: data.redo_count ?? s.redoCount,
+            lastSavedPath: data.last_saved_path || s.lastSavedPath,
+          }))
+        },
+        (error: string) => {
+          setState(s => ({ ...s, loading: false, error }))
+        }
+      )
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
       setState(s => ({ ...s, loading: false, error: msg }))

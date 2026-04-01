@@ -16,11 +16,14 @@ Run with:
 from __future__ import annotations
 
 import pickle
+import json
+import time
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent import create_session, send_message
@@ -170,6 +173,62 @@ def save_document(session_id: str, body: SaveDocumentRequest):
         b64=b64,
         format=fmt,
         message=result_msg,
+    )
+
+
+@app.post("/sessions/{session_id}/messages-stream")
+def send_session_message_stream(session_id: str, body: SendMessageRequest):
+    """Streaming endpoint that yields text character by character."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+
+    # Inject title if provided
+    if body.document_title and state:
+        state["document_title"] = body.document_title
+    elif body.document_title and not state:
+        state = {"document_title": body.document_title}
+
+    # Get full response from agent
+    result = send_message(
+        session_id=session_id,
+        user_message=body.message,
+        state=state,
+    )
+
+    _sessions[session_id] = result["state"]
+    
+    def event_generator():
+        # Yield tool calls first
+        if result["tool_calls_made"]:
+            yield f"data: {json.dumps({'type': 'tools', 'tools': result['tool_calls_made']})}\n\n"
+        
+        # Stream response character by character
+        response_text = result["ai_response"]
+        for char in response_text:
+            chunk = {"type": "chunk", "text": char}
+            yield f"data: {json.dumps(chunk)}\n\n"
+            time.sleep(0.01)  # Small delay for natural streaming effect
+        
+        # Send completion with metadata
+        completion = {
+            "type": "complete",
+            "document_content": result["document_content"],
+            "undo_count": len(result.get("document_history", [])),
+            "redo_count": len(result.get("redo_stack", [])),
+            "last_saved_path": result["last_saved_path"],
+        }
+        yield f"data: {json.dumps(completion)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
