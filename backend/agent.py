@@ -42,8 +42,9 @@ from langgraph.prebuilt import ToolNode
 
 load_dotenv()
 
-OUTPUT_DIR = Path("saved_documents")
-OUTPUT_DIR.mkdir(exist_ok=True)
+# Save files to user's Documents folder, outside the repository
+OUTPUT_DIR = Path.home() / "Documents" / "Drafter_Documents"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Thread-local context (safe for concurrent requests) ───────────────────────
 _local = threading.local()
