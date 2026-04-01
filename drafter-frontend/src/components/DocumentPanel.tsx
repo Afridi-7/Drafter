@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Copy, Check, Eye, Code2, FileText, Sparkles } from 'lucide-react'
+import { Copy, Check, Eye, Code2, FileText } from 'lucide-react'
 import clsx from 'clsx'
 
 interface Props {
@@ -83,6 +83,13 @@ export default function DocumentPanel({ title, content, onContentChange, onEditS
   const handleCancelEdit = () => {
     setShowEditModal(false)
     setEditInstruction('')
+  }
+
+  const handleModalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleSubmitEdit()
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -176,188 +183,121 @@ export default function DocumentPanel({ title, content, onContentChange, onEditS
             </p>
           </div>
         ) : viewMode === 'preview' ? (
-          <div className="doc-surface min-h-full">
-            <div className="max-w-[680px] mx-auto px-10 py-10">
-              <div className="prose-doc">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-              </div>
-            </div>
+          <div className="prose prose-invert max-w-none px-6 py-5">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content}
+            </ReactMarkdown>
           </div>
         ) : (
-          <div className="min-h-full p-6" style={{ background: 'var(--surface)' }}>
+          <div className="relative h-full">
             <textarea
               ref={textareaRef}
               value={content}
               onChange={handleContentChange}
-              onSelect={handleTextSelect}
+              onMouseUp={handleTextSelect}
+              onKeyUp={handleTextSelect}
               onKeyDown={handleKeyDown}
-              placeholder="Type here or use AI to edit..."
-              className="w-full h-[calc(100vh-280px)] font-mono text-xs leading-relaxed p-5 rounded-xl resize-none"
-              style={{
-                background: 'var(--surface2)',
-                border: '1px solid var(--border)',
-                color: 'var(--text2)',
-                outline: 'none',
-              }}
+              className="w-full h-full p-6 bg-transparent font-mono text-sm resize-none outline-none"
+              style={{ color: 'var(--text1)' }}
+              spellCheck="false"
             />
-            
-            {/* Floating Edit Selection Button */}
-            {selection && (
-              <div className="fixed bottom-8 right-8 anim-scale-in">
+
+            {selection && onEditSelection && (
+              <div
+                className="absolute bottom-4 right-4 rounded-xl px-3 py-2 flex items-center gap-2 anim-fade-in"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(76,29,149,0.92), rgba(3,105,161,0.92))',
+                  border: '1px solid rgba(196,181,253,0.35)',
+                  boxShadow: '0 14px 34px rgba(0,0,0,0.45), 0 0 0 1px rgba(196,181,253,0.12) inset',
+                }}
+              >
+                <span className="text-xs" style={{ color: 'rgba(237,233,254,0.9)' }}>
+                  {selection.text.length} chars selected
+                </span>
                 <button
                   onClick={handleEditSelection}
-                  className="flex items-center gap-2 px-5 py-3 rounded-xl shadow-xl transition-all hover:scale-105 hover:shadow-2xl active:scale-95"
+                  className="text-xs font-semibold rounded-lg px-2.5 py-1.5"
                   style={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none',
-                    fontWeight: 600,
-                    fontSize: '14px',
-                    zIndex: 50,
-                    boxShadow: '0 10px 40px rgba(102, 126, 234, 0.4), 0 0 0 1px rgba(255,255,255,0.1) inset',
+                    color: '#0f172a',
+                    background: 'linear-gradient(135deg, #c4b5fd, #67e8f9)',
                   }}
                 >
-                  <Sparkles size={18} />
-                  <span>Edit Selection with AI</span>
-                  <kbd 
-                    className="ml-1 px-2 py-0.5 rounded text-xs font-mono"
-                    style={{
-                      background: 'rgba(255,255,255,0.2)',
-                      border: '1px solid rgba(255,255,255,0.3)',
-                    }}
-                  >
-                    Ctrl+E
-                  </kbd>
+                  Edit With AI
                 </button>
-                
-                {/* Selection info badge */}
-                <div 
-                  className="absolute -top-2 -right-2 px-2 py-1 rounded-full text-xs font-bold"
-                  style={{
-                    background: '#10b981',
-                    color: 'white',
-                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
-                  }}
-                >
-                  {selection.text.split(/\s+/).length} words
-                </div>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Custom Edit Modal */}
+      {!isEmpty && viewMode === 'source' && (
+        <div className="px-6 py-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text3)' }}>
+          Select text and press <b>Ctrl/Cmd + E</b> or use the floating <b>Edit With AI</b> action.
+        </div>
+      )}
+
+      {/* Edit Modal */}
       {showEditModal && selection && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(8px)' }}
-          onClick={handleCancelEdit}
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 px-4"
+          style={{
+            background:
+              'radial-gradient(circle at 18% 18%, rgba(56,189,248,0.2), transparent 42%), radial-gradient(circle at 82% 78%, rgba(192,132,252,0.2), transparent 42%), rgba(2,6,23,0.75)',
+            backdropFilter: 'blur(6px)',
+          }}
         >
-          <div 
-            className="rounded-2xl shadow-2xl p-7 max-w-lg w-full mx-4"
+          <div
+            className="max-w-xl w-full rounded-2xl p-5 anim-scale-in"
             style={{
-              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              background: 'linear-gradient(155deg, rgba(30,41,59,0.96), rgba(49,46,129,0.93) 60%, rgba(14,116,144,0.9))',
+              border: '1px solid rgba(196,181,253,0.35)',
+              boxShadow: '0 30px 80px rgba(2,6,23,0.65), inset 0 1px 0 rgba(255,255,255,0.06)',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-bold mb-1" style={{ 
-              color: '#1e293b',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}>
-              ✨ Edit Selection with AI
-            </h3>
-            <p className="text-xs mb-4" style={{ color: '#64748b' }}>
-              Let AI transform your selected text
+            <p className="text-[11px] uppercase tracking-[0.18em] mb-1" style={{ color: 'rgba(186,230,253,0.85)' }}>
+              AI Selection Edit
             </p>
-            
-            <div className="mb-5">
-              <p className="text-xs font-semibold mb-2" style={{ color: '#475569' }}>
-                Selected ({selection.text.split(/\s+/).length} words)
-              </p>
-              <div 
-                className="p-3 rounded-lg text-xs font-mono max-h-24 overflow-y-auto"
-                style={{
-                  background: '#f1f5f9',
-                  border: '1px solid #e2e8f0',
-                  color: '#334155',
-                }}
-              >
-                {selection.text.substring(0, 200)}
-                {selection.text.length > 200 && '...'}
-              </div>
+            <h3 className="text-lg font-semibold mb-3" style={{ color: '#eef2ff' }}>
+              Tell AI How To Transform This Selection
+            </h3>
+
+            <div
+              className="mb-4 rounded-xl p-3 text-xs leading-relaxed max-h-28 overflow-y-auto"
+              style={{
+                background: 'rgba(15,23,42,0.46)',
+                border: '1px solid rgba(148,163,184,0.28)',
+                color: 'rgba(226,232,240,0.9)',
+              }}
+            >
+              {selection.text}
             </div>
 
-            <div className="mb-5">
-              <label className="block text-sm font-semibold mb-2" style={{ color: '#334155' }}>
-                What should AI do?
-              </label>
-              <input
-                type="text"
-                value={editInstruction}
-                onChange={(e) => setEditInstruction(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSubmitEdit()
-                  if (e.key === 'Escape') handleCancelEdit()
-                }}
-                placeholder="Make it concise, Fix grammar, Add examples..."
-                autoFocus
-                className="w-full px-4 py-3 rounded-lg text-sm"
-                style={{
-                  background: '#ffffff',
-                  border: '2px solid #e2e8f0',
-                  color: '#1e293b',
-                  outline: 'none',
-                  transition: 'border-color 0.2s',
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
-                onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-              />
-              <p className="text-xs mt-2" style={{ color: '#94a3b8' }}>
-                💡 Press <kbd style={{ 
-                  background: '#f1f5f9', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '11px'
-                }}>Enter</kbd> to submit, <kbd style={{ 
-                  background: '#f1f5f9', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '11px'
-                }}>Esc</kbd> to cancel
-              </p>
-            </div>
+            <input
+              autoFocus
+              type="text"
+              value={editInstruction}
+              onChange={e => setEditInstruction(e.target.value)}
+              onKeyDown={handleModalKeyDown}
+              placeholder="Example: Rewrite this to sound more confident and concise"
+              className="input w-full mb-4"
+              style={{ color: 'var(--text1)' }}
+            />
 
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleCancelEdit}
-                className="px-5 py-2.5 rounded-lg text-sm font-medium transition-all hover:bg-gray-100"
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  color: '#64748b',
-                }}
-              >
-                Cancel
-              </button>
+            <div className="flex gap-2">
               <button
                 onClick={handleSubmitEdit}
                 disabled={!editInstruction.trim()}
-                className="px-5 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                className="flex-1 rounded-lg py-2.5 text-sm font-semibold"
                 style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
+                  color: '#0f172a',
+                  background: 'linear-gradient(135deg, #c4b5fd, #67e8f9)',
+                  opacity: editInstruction.trim() ? 1 : 0.45,
                 }}
               >
-                ✨ Edit with AI
+                Send To AI
+              </button>
+              <button onClick={handleCancelEdit} className="btn-ghost flex-1">
+                Cancel
               </button>
             </div>
           </div>

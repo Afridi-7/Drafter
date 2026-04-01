@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import base64
+import os
 import re
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Sequence, TypedDict
-
 from dotenv import load_dotenv
 from langchain_core.messages import (
     AIMessage,
@@ -29,7 +29,6 @@ load_dotenv()
 OUTPUT_DIR = Path.home() / "Documents" / "Drafter_Documents"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-#  Thread-local context (safe for concurrent requests) 
 _local = threading.local()
 
 
@@ -56,8 +55,9 @@ def _push_history(new_content: str) -> None:
     ctx["document_content"] = new_content
 
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # STATE
+# ══════════════════════════════════════════════════════════════════════════════
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -70,8 +70,9 @@ class AgentState(TypedDict):
     last_saved_format: str
 
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # TOOLS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @tool
 def update_document(content: str) -> str:
@@ -158,6 +159,33 @@ def insert_after_section(heading: str, content: str) -> str:
 
 
 @tool
+def replace_selected_text(selected_text: str, new_text: str, selection_start: int, selection_end: int) -> str:
+    """Replace a selected portion of the document with new text.
+    This is used for inline editing where only part of the document should be changed.
+    
+    Args:
+        selected_text: The text that was selected by the user (for verification).
+        new_text: The new text to replace the selection with.
+        selection_start: Character position where selection starts.
+        selection_end: Character position where selection ends.
+    """
+    ctx = _ctx()
+    doc = ctx["document_content"]
+    
+    # Verify the selection matches what we expect
+    actual_selection = doc[selection_start:selection_end]
+    if actual_selection != selected_text:
+        return f"Selection mismatch. Document may have changed. Expected:\n{selected_text}\n\nActual:\n{actual_selection}"
+    
+    # Replace only the selected portion
+    new_doc = doc[:selection_start] + new_text + doc[selection_end:]
+    _push_history(new_doc)
+    
+    word_count = len(new_text.split())
+    return f"Selection replaced ({word_count} words in new text).\n\nCURRENT:\n{_ctx()['document_content']}"
+
+
+@tool
 def undo_last_change() -> str:
     """Undo the last change to the document. Can be called multiple times."""
     ctx = _ctx()
@@ -205,22 +233,22 @@ def get_document_stats() -> str:
     )
 
 
-def _save_document_helper(content: str, title: str, filename: str, format: str = "md") -> tuple[str, str, str]:
-    """Helper function to save document and return (base64, format, message).
-    
-    Args:
-        content: Document content to save
-        title: Document title
-        filename: Base name for the file (no extension)
-        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'
-        
-    Returns:
-        Tuple of (base64_string, actual_format, message)
-    """
-    if not content.strip():
-        raise ValueError("Cannot save — document is empty.")
+@tool
+def save_document(filename: str, format: str = "md") -> str:
+    """Save the document to disk and prepare a download payload.
 
-    safe = re.sub(r"[^\w\-_\. ]", "_", filename).strip() or (
+    Args:
+        filename: Base name for the file (no extension).
+        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'.
+    """
+    ctx = _ctx()
+    content = ctx["document_content"]
+    title = ctx["document_title"]
+    
+    if not content.strip():
+        return "❌ Cannot save — document is empty."
+
+    safe = re.sub(r"[^\w\-_.]", "_", filename).strip() or (
         f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
     fmt = format.lower().lstrip(".")
@@ -242,53 +270,31 @@ def _save_document_helper(content: str, title: str, filename: str, format: str =
             fmt = "md"
             filepath = OUTPUT_DIR / f"{safe}.{fmt}"
             filepath.write_text(content, encoding="utf-8")
-
     elif fmt == "pdf":
         try:
             from reportlab.lib.pagesizes import A4
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.lib.units import cm
-            from reportlab.lib import colors
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-            doc_pdf = SimpleDocTemplate(
+            pdf = SimpleDocTemplate(
                 str(filepath),
                 pagesize=A4,
-                leftMargin=2.5*cm, rightMargin=2.5*cm,
-                topMargin=2.5*cm, bottomMargin=2.5*cm,
+                leftMargin=2.2 * cm,
+                rightMargin=2.2 * cm,
+                topMargin=2.2 * cm,
+                bottomMargin=2.2 * cm,
             )
             styles = getSampleStyleSheet()
-            title_style = ParagraphStyle(
-                "DocTitle", parent=styles["Heading1"],
-                fontSize=20, spaceAfter=18, textColor=colors.HexColor("#0d0d0d"),
-            )
-            body_style = ParagraphStyle(
-                "DocBody", parent=styles["Normal"],
-                fontSize=11, leading=18, spaceAfter=10,
-                textColor=colors.HexColor("#1a1a1a"),
-            )
-            h2_style = ParagraphStyle(
-                "DocH2", parent=styles["Heading2"],
-                fontSize=14, spaceAfter=8, spaceBefore=14,
-                textColor=colors.HexColor("#111111"),
-            )
+            story = [Paragraph(title, styles["Title"]), Spacer(1, 10)]
 
-            story = [Paragraph(title, title_style)]
             for line in content.split("\n"):
-                stripped = line.strip()
-                if not stripped:
-                    story.append(Spacer(1, 6))
-                elif stripped.startswith("## "):
-                    story.append(Paragraph(stripped[3:], h2_style))
-                elif stripped.startswith("# "):
-                    story.append(Paragraph(stripped[2:], title_style))
+                if line.strip():
+                    story.append(Paragraph(line, styles["BodyText"]))
                 else:
-                    # strip basic markdown bold/italic for PDF
-                    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", stripped)
-                    clean = re.sub(r"\*(.+?)\*", r"\1", clean)
-                    story.append(Paragraph(clean, body_style))
+                    story.append(Spacer(1, 6))
 
-            doc_pdf.build(story)
+            pdf.build(story)
         except ImportError:
             fmt = "md"
             filepath = OUTPUT_DIR / f"{safe}.{fmt}"
@@ -300,6 +306,11 @@ def _save_document_helper(content: str, title: str, filename: str, format: str =
     with open(filepath, "rb") as fh:
         b64 = base64.b64encode(fh.read()).decode()
 
+    # Update context
+    ctx["last_saved_b64"] = b64
+    ctx["last_saved_format"] = fmt
+    ctx["last_saved_path"] = str(filepath)
+    
     message = (
         f"💾 Saved!\n"
         f"   Path   : {filepath}\n"
@@ -307,62 +318,10 @@ def _save_document_helper(content: str, title: str, filename: str, format: str =
         f"   Words  : {len(content.split()):,}"
     )
     
-    return b64, fmt, message
+    return message
 
 
-@tool
-def save_document(filename: str, format: str = "md") -> str:
-    """Save the document to disk and prepare a download payload.
-
-    Args:
-        filename: Base name for the file (no extension).
-        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'.
-    """
-    ctx = _ctx()
-    content = ctx["document_content"]
-    title = ctx["document_title"]
-    
-    try:
-        b64, fmt, message = _save_document_helper(content, title, filename, format)
-        
-        # Update context
-        ctx["last_saved_b64"] = b64
-        ctx["last_saved_format"] = fmt
-        ctx["last_saved_path"] = str(OUTPUT_DIR / f"{filename}.{fmt}")
-        
-        return message
-    except ValueError as e:
-        return f"❌ {str(e)}"
-
-
-@tool
-def replace_selected_text(selected_text: str, new_text: str, selection_start: int, selection_end: int) -> str:
-    """Replace a selected portion of the document with new text.
-    This is used for inline editing where only part of the document should be changed.
-    
-    Args:
-        selected_text: The text that was selected by the user (for verification).
-        new_text: The new text to replace the selection with.
-        selection_start: Character position where selection starts.
-        selection_end: Character position where selection ends.
-    """
-    ctx = _ctx()
-    doc = ctx["document_content"]
-    
-    # Verify the selection matches what we expect
-    actual_selection = doc[selection_start:selection_end]
-    if actual_selection != selected_text:
-        return f"❌ Selection mismatch. Document may have changed. Expected:\n{selected_text}\n\nActual:\n{actual_selection}"
-    
-    # Replace only the selected portion
-    new_doc = doc[:selection_start] + new_text + doc[selection_end:]
-    _push_history(new_doc)
-    
-    word_count = len(new_text.split())
-    return f"✅ Selection replaced ({word_count} words in new text).\n\nCURRENT:\n{_ctx()['document_content']}"
-
-
-#  Tool registry 
+# ── Tool registry ─────────────────────────────────────────────────────────────
 TOOLS = [
     update_document,
     append_to_document,
@@ -375,23 +334,15 @@ TOOLS = [
     save_document,
     replace_selected_text,
 ]
-
-#  Model 
-_model = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0.7,
-    streaming=False,  # streaming handled at API layer
-).bind_tools(TOOLS, tool_choice="auto")
-
-
-
-# GRAPH NODES
+# ── Tool registry ─────────────────────────────────────────────────────────────
+# ── State sync functions ─────────────────────────────────────────────────────────────
 
 def _sync_ctx_from_state(state: AgentState) -> None:
+    """Sync thread-local context from state dict."""
     ctx = _ctx()
     ctx["document_content"] = state.get("document_content", "")
     ctx["document_history"] = list(state.get("document_history", []))
-    ctx["redo_stack"] = list(state.get("redo_stack", []))
+    ctx["redo_stack"] =list(state.get("redo_stack", []))
     ctx["document_title"] = state.get("document_title", "Untitled")
     ctx["last_saved_path"] = state.get("last_saved_path", "")
     ctx["last_saved_b64"] = state.get("last_saved_b64", "")
@@ -399,16 +350,25 @@ def _sync_ctx_from_state(state: AgentState) -> None:
 
 
 def _sync_state_from_ctx() -> dict:
+    """Sync state dict from thread-local context."""
     ctx = _ctx()
     return {
         "document_content": ctx["document_content"],
-        "document_history": list(ctx["document_history"]),
-        "redo_stack": list(ctx["redo_stack"]),
+        "document_history": ctx["document_history"],
+        "redo_stack": ctx["redo_stack"],
+        "document_title": ctx["document_title"],
         "last_saved_path": ctx["last_saved_path"],
         "last_saved_b64": ctx["last_saved_b64"],
         "last_saved_format": ctx["last_saved_format"],
     }
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AGENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+_base_model = ChatOpenAI(model="gpt-4o", temperature=1)
+_model = _base_model.bind_tools(TOOLS)
 
 def agent_node(state: AgentState) -> dict:
     _sync_ctx_from_state(state)
@@ -423,7 +383,7 @@ def agent_node(state: AgentState) -> dict:
     )
 
     system = SystemMessage(
-        content=f"""You are Drafter — an expert writing assistant. Your PRIMARY JOB is to write content into a document using your tools.
+        content=f"""You are Drafter — an exer_t writing assistant. You P_RIMARY JOB is to write content into a document using your tools.
 
 ═══ CURRENT DOCUMENT ═══
 {preview if preview else "(empty — awaiting content)"}
@@ -436,16 +396,16 @@ DOCUMENT INFO:
 • Redo    : {len(ctx['redo_stack'])} version(s) available
 
 🔧 YOUR TOOLS (YOU MUST USE THESE):
-• update_document(content)      → Replace entire document with new content
-• append_to_document(content)   → Add content to the end
-• prepend_to_document(content)  → Add content to the beginning
-• replace_section(old, new)     → Find and replace specific text
-• insert_after_section(heading, content) → Insert after a heading
-• replace_selected_text(selected_text, new_text, selection_start, selection_end) → Replace a user-selected portion (inline editing)
-• undo_last_change()            → Undo last change
-• redo_last_change()            → Redo last change
-• get_document_stats()          → Get word count, reading time
-• save_document(title, format)  → Save as .txt, .md, .docx, or .pdf
+• update_document(content)         → Replace entire document with new content
+• append_to_document(content)      → Add content to the end
+• prepend_to_document(content)     → Add content to the beginning
+• replace_section(old, new)        → Find and replace specific text
+• insert_after_section(h, content) → Insert after a heading
+• replace_selected_text(s, new, start, end) → Replace user selection
+• undo_last_change()               → Undo last change
+• redo_last_change()               → Redo last change
+• get_document_stats()             → Get word count, reading time
+• save_document(name, format)      → Save as .txt, .md, or .docx
 
 ⚠️ CRITICAL RULES - READ CAREFULLY:
 1. **YOU MUST USE TOOLS TO WRITE CONTENT** - When the user asks you to write, draft, create, or generate ANY content (emails, letters, blog posts, etc.), you MUST call update_document() or append_to_document() with the ACTUAL content. DO NOT just describe what you would write - WRITE IT using the tool!
@@ -454,7 +414,8 @@ DOCUMENT INFO:
    User: "Write an email about sick leave"
    YOU MUST DO: Call update_document(content="Subject: Sick Leave Request\n\nDear [Manager's Name]...")
    Then respond: "I've drafted your sick leave email. You can see it in the document panel."
-   
+  • replace_selected_text(selected_text, new_text, selection_start, selection_end) → Replace a user-selected portion (inline editing)
+ 
 3. **EXAMPLE - WRONG BEHAVIOR** (DO NOT DO THIS):
    User: "Write an email about sick leave"
    WRONG: Just responding "I've drafted an email..." without calling any tool
@@ -472,19 +433,20 @@ REMEMBER: Your tools are how you actually create content for the user. Always us
     )
 
     response = _model.invoke([system] + list(state["messages"]))
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        pass
+    else:
+        pass
     result = {"messages": [response], **_sync_state_from_ctx()}
     return result
 
 
 def tools_node(state: AgentState) -> dict:
-    # Sync context from state BEFORE running tools
-    _sync_ctx_from_state(state)
-    
-    # Create a custom tool executor that preserves context
+    """Execute the tools called by the agent."""
     from langchain_core.messages import ToolMessage
     
     tool_messages = []
-    last_message = state["messages"][-1]
+    last_message = state["messages"][-1] if state["messages"] else None
     
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:
@@ -505,9 +467,8 @@ def tools_node(state: AgentState) -> dict:
                         ToolMessage(content=f"Error: {str(e)}", tool_call_id=tool_id)
                     )
     
-    # NOW sync state from context (after tools have run)
+    # Sync state from context (after tools have run)
     sync_data = _sync_state_from_ctx()
-
     
     return {
         "messages": tool_messages,
@@ -522,8 +483,9 @@ def should_continue(state: AgentState) -> str:
     return END
 
 
-
+# ══════════════════════════════════════════════════════════════════════════════
 # GRAPH ASSEMBLY
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _build_graph():
     g = StateGraph(AgentState)
@@ -539,8 +501,9 @@ def _build_graph():
 _graph = _build_graph()
 
 
-
+# ═══════════════════════════════════════════════════════════_══════════════════
 # PUBLIC API
+# ══════════════════════════════════════════════════════════════════════════════
 
 def create_session() -> str:
     return str(uuid.uuid4())
@@ -552,18 +515,24 @@ def send_message(
     state: dict,
 ) -> dict[str, Any]:
     """
-    Send one user message and return the updated state.
-
-    Returns dict:
-        ai_response      : assistant reply text
-        document_content : current document
-        document_history : undo stack
-        redo_stack       : redo stack
-        last_saved_path  : path if just saved
-        last_saved_b64   : base64 file data for browser download
-        last_saved_format: file extension
-        tool_calls_made  : list of tool names used
-        state            : full updated state for next call
+    Send one user message and return the updated state and response.
+    
+    Args:
+        session_id: Unique session identifier
+        user_message: The user's message
+        state: Current session state dict
+    
+    Returns:
+        Dict with keys:
+        - ai_response: Text response from the AI
+        - document_content: Current document content
+        - document_history: Undo history
+        - redo_stack: Redo stack
+        - last_saved_path: Path if just saved
+        - last_saved_b64: Base64 file data for browser download
+        - last_saved_format: File extension
+        - tool_calls_made: List of tool names used
+        - state: Full updated state for next call
     """
     # Initialize state with defaults if empty or missing fields
     if not state or "messages" not in state:
@@ -680,122 +649,39 @@ def send_message(
 def send_message_with_selection(
     session_id: str,
     user_message: str,
-    state: dict[str, Any],
-    selection_start: int,
-    selection_end: int,
-    selected_text: str,
-) -> dict:
-    """Send a message with selection context to edit only a portion of the document.
+    state: dict,
+    selection_start: int | None = None,
+    selection_end: int | None = None,
+    selected_text: str | None = None,
+) -> dict[str, Any]:
+    """
+    Send a message with optional text selection context for AI editing.
     
     Args:
         session_id: Unique session identifier
-        user_message: The user's prompt for editing the selection
-        state: Current session state
-        selection_start: Character position where selection starts
-        selection_end: Character position where selection ends
-        selected_text: The actual selected text
-        
+        user_message: The user's message/instruction
+        state: Current session state dict
+        selection_start: Start index of selected text (optional)
+        selection_end: End index of selected text (optional)
+        selected_text: The actual selected text (optional)
+    
     Returns:
-        Dictionary with ai_response, updated document_content, and state
+        Same as send_message()
     """
-    if not _graph:
-        return {
-            "ai_response": "Agent not initialized",
-            "document_content": "",
-            "document_history": [],
-            "redo_stack": [],
-            "last_saved_path": "",
-            "last_saved_b64": "",
-            "last_saved_format": "",
-            "tool_calls_made": [],
-            "state": state,
-        }
+    # If selection is provided, augment the message with context
+    if selected_text and selection_start is not None and selection_end is not None:
+        enhanced_message = (
+            f"{user_message}\n\n"
+            f"[SELECTION CONTEXT]\n"
+            f"The user has selected text from position {selection_start} to {selection_end}:\n"
+            f'"""{selected_text}"""\n\n'
+            f"Please apply the instruction specifically to this selected portion of the document."
+        )
+    else:
+        enhanced_message = user_message
     
-    # Ensure all required fields exist in state
-    state.setdefault("document_content", "")
-    state.setdefault("document_history", [])
-    state.setdefault("redo_stack", [])
-    state.setdefault("document_title", "Untitled")
-    state.setdefault("last_saved_path", "")
-    state.setdefault("last_saved_b64", "")
-    state.setdefault("last_saved_format", "")
-    
-    # Initialize context for this session
-    _local.data = {
-        "document_content": state.get("document_content", ""),
-        "document_history": list(state.get("document_history", [])),
-        "redo_stack": list(state.get("redo_stack", [])),
-        "document_title": state.get("document_title", "Untitled"),
-        "last_saved_path": state.get("last_saved_path", ""),
-        "last_saved_b64": state.get("last_saved_b64", ""),
-        "last_saved_format": state.get("last_saved_format", ""),
-        "selection_start": selection_start,
-        "selection_end": selection_end,
-        "selected_text": selected_text,
-    }
+    # Delegate to the main send_message function
+    return send_message(session_id, enhanced_message, state)
 
-    # Enhanced message with selection context
-    enhanced_message = f"""INLINE EDITING MODE:
 
-The user has selected a specific portion of the document to edit. You MUST use the replace_selected_text tool to edit ONLY this selection.
-
-SELECTED TEXT (to be edited):
-\"\"\"
-{selected_text}
-\"\"\"
-
-SELECTION POSITION: characters {selection_start} to {selection_end}
-
-USER'S REQUEST:
-{user_message}
-
-YOU MUST:
-1. Call replace_selected_text(selected_text="{selected_text}", new_text="...", selection_start={selection_start}, selection_end={selection_end})
-2. Keep the rest of the document UNCHANGED
-3. Only modify the selected portion according to the user's request
-"""
-
-    state["messages"] = list(state.get("messages", [])) + [
-        HumanMessage(content=enhanced_message)
-    ]
-
-    config = {"configurable": {"thread_id": session_id}}
-
-    final_state: dict | None = None
-    for step in _graph.stream(state, config=config, stream_mode="values"):
-        final_state = step
-
-    if final_state is None:
-        return {
-            "ai_response": "Something went wrong. Please try again.",
-            "document_content": state.get("document_content", ""),
-            "document_history": state.get("document_history", []),
-            "redo_stack": state.get("redo_stack", []),
-            "last_saved_path": "",
-            "last_saved_b64": "",
-            "last_saved_format": "",
-            "tool_calls_made": [],
-            "state": state,
-        }
-
-    ai_response = ""
-    tool_calls_made: list[str] = []
-    for msg in reversed(final_state["messages"]):
-        if isinstance(msg, AIMessage) and msg.content:
-            ai_response = msg.content
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                tool_calls_made = [tc["name"] for tc in msg.tool_calls]
-            break
-
-    result = {
-        "ai_response": ai_response,
-        "document_content": final_state.get("document_content", ""),
-        "document_history": final_state.get("document_history", []),
-        "redo_stack": final_state.get("redo_stack", []),
-        "last_saved_path": final_state.get("last_saved_path", ""),
-        "last_saved_b64": final_state.get("last_saved_b64", ""),
-        "last_saved_format": final_state.get("last_saved_format", ""),
-        "tool_calls_made": tool_calls_made,
-        "state": final_state,
-    }
-    return result
+# Streaming handled via WebSocket in main.py

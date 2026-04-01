@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar        from './components/Sidebar'
 import ChatPanel      from './components/ChatPanel'
 import DocumentPanel  from './components/DocumentPanel'
@@ -103,11 +103,17 @@ export default function App() {
   const handleSave = async (format: string) => {
     try {
       if (!state.documentContent.trim()) {
-        throw new Error('Document is empty')
+        alert('Cannot download - document is empty')
+        return
       }
       
       // Get base64 from backend
       const b64 = await saveDocument(format as 'md' | 'txt' | 'docx' | 'pdf')
+      
+      if (!b64 || b64.trim() === '') {
+        alert('Failed to generate file - empty response from server')
+        return
+      }
       
       // Decode base64 and trigger download
       const safe = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
@@ -118,8 +124,8 @@ export default function App() {
       }
 
       const mimeTypes: Record<string, string> = {
-        md: 'text/markdown; charset=utf-8',
-        txt: 'text/plain; charset=utf-8',
+        md: 'text/markdown',
+        txt: 'text/plain',
         docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         pdf: 'application/pdf',
       }
@@ -133,8 +139,12 @@ export default function App() {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
+      
+      console.log(`✅ Downloaded: ${safe}.${format}`)
     } catch (error) {
-      throw error
+      const message = error instanceof Error ? error.message : 'Download failed'
+      alert(`Download failed: ${message}`)
+      console.error('Download error:', error)
     }
   }
 

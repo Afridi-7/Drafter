@@ -30,6 +30,22 @@ export interface SaveResponse {
   message: string
 }
 
+export interface GmailStatusResponse {
+  connected: boolean
+}
+
+export interface SendEmailRequest {
+  to: string
+  subject: string
+  body: string
+  session_id: string
+}
+
+export interface SendEmailResponse {
+  success: boolean
+  message: string
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -185,5 +201,18 @@ export const api = {
   deleteSession: (sessionId: string) =>
     request<{ deleted: string }>(`/sessions/${sessionId}`, {
       method: 'DELETE',
+    }),
+
+  // Gmail OAuth
+  getGmailLoginUrl: (sessionId: string) =>
+    `http://localhost:8000/auth/google/login?session_id=${sessionId}`,
+
+  checkGmailStatus: (sessionId: string) =>
+    request<GmailStatusResponse>(`/auth/google/status?session_id=${sessionId}`),
+
+  sendEmail: (data: SendEmailRequest) =>
+    request<SendEmailResponse>('/send-email', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 }

@@ -20,6 +20,7 @@ export interface AppState {
   undoCount:       number
   redoCount:       number
   lastSavedPath:   string
+  gmailConnected:  boolean
 }
 
 interface PersistedState {
@@ -70,6 +71,7 @@ export function useStore() {
       undoCount:       0,
       redoCount:       0,
       lastSavedPath:   '',
+      gmailConnected:  false,
     }
   })
   const initRef = useRef(false)
@@ -89,6 +91,22 @@ export function useStore() {
     try {
       const { session_id } = await api.createSession()
       setState(s => ({ ...s, sessionId: session_id, initializing: false }))
+      
+      // Check Gmail connection status
+      try {
+        const gmailStatus = await api.checkGmailStatus(session_id)
+        setState(s => ({ ...s, gmailConnected: gmailStatus.connected }))
+      } catch {
+        // Gmail status check failed, keep as false
+      }
+      
+      // Check for OAuth callback success
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('gmail_connected') === 'true') {
+        setState(s => ({ ...s, gmailConnected: true }))
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname)
+      }
     } catch {
       setState(s => ({
         ...s,
@@ -245,6 +263,7 @@ export function useStore() {
       undoCount: 0,
       redoCount: 0,
       lastSavedPath: '',
+      gmailConnected: false,
     }
     setState(freshState)
     saveToStorage({
@@ -270,7 +289,7 @@ export function useStore() {
   }, [])
 
   const saveDocument = useCallback(
-    async (format: 'md' | 'txt' | 'docx'): Promise<string> => {
+    async (format: 'md' | 'txt' | 'docx' | 'pdf'): Promise<string> => {
       if (!state.sessionId) throw new Error('No active session')
       try {
         const res = await api.saveDocument(state.sessionId, format)
@@ -282,6 +301,40 @@ export function useStore() {
       }
     },
     [state.sessionId]
+  )
+
+  const connectGmail = useCallback(() => {
+    if (!state.sessionId) {
+      setState(s => ({ ...s, error: 'No active session' }))
+      return
+    }
+    const loginUrl = api.getGmailLoginUrl(state.sessionId)
+    window.location.href = loginUrl
+  }, [state.sessionId])
+
+  const sendEmail = useCallback(
+    async (to: string, subject: string, body: string): Promise<void> => {
+      if (!state.sessionId) throw new Error('No active session')
+      if (!state.gmailConnected) throw new Error('Gmail not connected')
+      
+      try {
+        const result = await api.sendEmail({
+          to,
+          subject,
+          body,
+          session_id: state.sessionId,
+        })
+        
+        if (!result.success) {
+          throw new Error(result.message)
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to send email'
+        setState(s => ({ ...s, error: msg }))
+        throw e
+      }
+    },
+    [state.sessionId, state.gmailConnected]
   )
 
   return {
@@ -296,5 +349,7 @@ export function useStore() {
     resetSession,
     clearError,
     saveDocument,
+    connectGmail,
+    sendEmail,
   }
 }
