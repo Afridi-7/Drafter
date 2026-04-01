@@ -22,6 +22,8 @@ const FORMATS = [
 ]
 
 interface SidebarProps {
+  documents: { id: string; title: string }[]
+  activeDocumentId: string | null
   documentTitle: string
   undoCount:     number
   redoCount:     number
@@ -31,6 +33,8 @@ interface SidebarProps {
   onTitleChange: (t: string) => void
   onQuickAction: (prompt: string) => void
   onSave:        (format: string) => void
+  onCreateDocument: () => void
+  onSwitchDocument: (documentId: string) => void
   onConnectGmail: () => void
   onDisconnectGmail: () => void
   onChangeGmailAccount: () => void
@@ -40,8 +44,9 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  documentTitle, undoCount, redoCount, lastSavedPath,
+  documents, activeDocumentId, documentTitle, undoCount, redoCount, lastSavedPath,
   loading, gmailConnected, onTitleChange, onQuickAction, onSave, onConnectGmail, onDisconnectGmail, onChangeGmailAccount, onNewSession,
+  onCreateDocument, onSwitchDocument,
   onUndo, onRedo,
 }: SidebarProps) {
   const [saveFormat,    setSaveFormat]    = useState('md')
@@ -110,6 +115,31 @@ export default function Sidebar({
               <ChevronRight size={10} style={{ color: 'var(--text3)', flexShrink: 0 }} />
             </button>
           )}
+
+          <div className="mt-2 space-y-1 max-h-32 overflow-y-auto pr-0.5">
+            {documents.map(doc => (
+              <button
+                key={doc.id}
+                onClick={() => onSwitchDocument(doc.id)}
+                className="w-full text-left px-2.5 py-1.5 rounded-md text-[11px] truncate"
+                style={{
+                  background: doc.id === activeDocumentId ? 'rgba(167,139,250,0.2)' : 'transparent',
+                  border: doc.id === activeDocumentId ? '1px solid rgba(167,139,250,0.35)' : '1px solid transparent',
+                  color: doc.id === activeDocumentId ? '#ede9fe' : 'var(--text3)',
+                }}
+              >
+                {doc.title || 'Untitled'}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={onCreateDocument}
+            disabled={loading}
+            className="btn-ghost w-full text-xs py-1.5 mt-2"
+          >
+            + New Document
+          </button>
 
           {/* Undo / Redo row */}
           <div className="flex gap-1.5 mt-2">

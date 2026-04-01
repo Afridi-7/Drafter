@@ -1,6 +1,12 @@
 import { useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
 
+interface SessionDocument {
+  id: string
+  title: string
+  updated_at: number
+}
+
 interface PendingEmail {
   to: string
   subject: string
@@ -23,6 +29,8 @@ export interface ChatMessage {
 
 export interface AppState {
   sessionId:       string | null
+  activeDocumentId: string | null
+  documents:       SessionDocument[]
   loading:         boolean
   initializing:    boolean
   error:           string | null
@@ -39,6 +47,8 @@ export interface AppState {
 export function useStore() {
   const [state, setState] = useState<AppState>({
     sessionId:       null,
+    activeDocumentId: null,
+    documents:       [],
     loading:         false,
     initializing:    true,
     error:           null,
@@ -63,7 +73,37 @@ export function useStore() {
       // If OAuth callback provided a bound session, reuse it.
       const sessionId = oauthSessionId || (await api.createSession()).session_id
 
-      setState(s => ({ ...s, sessionId, initializing: false }))
+      let documents: SessionDocument[] = []
+      let activeDocumentId: string | null = null
+      try {
+        const docs = await api.listDocuments(sessionId)
+        documents = docs.documents
+        activeDocumentId = docs.active_document_id
+      } catch {
+        documents = []
+        activeDocumentId = null
+      }
+
+      let activeDocState = null as any
+      try {
+        activeDocState = await api.getDocument(sessionId)
+      } catch {
+        activeDocState = null
+      }
+
+      setState(s => ({
+        ...s,
+        sessionId,
+        activeDocumentId,
+        documents,
+        documentContent: activeDocState?.document_content ?? s.documentContent,
+        documentTitle: activeDocState?.document_title ?? s.documentTitle,
+        undoCount: activeDocState?.undo_count ?? s.undoCount,
+        redoCount: activeDocState?.redo_count ?? s.redoCount,
+        lastSavedPath: activeDocState?.last_saved_path ?? s.lastSavedPath,
+        pendingEmail: activeDocState?.pending_email ?? s.pendingEmail,
+        initializing: false,
+      }))
 
       // Check Gmail connection status for the active session.
       try {
@@ -137,6 +177,9 @@ export function useStore() {
             redoCount: data.redo_count ?? s.redoCount,
             lastSavedPath: data.last_saved_path || s.lastSavedPath,
             pendingEmail: data.pending_email ?? s.pendingEmail,
+            documents: s.documents.map(d =>
+              d.id === s.activeDocumentId ? { ...d, title: s.documentTitle, updated_at: Date.now() / 1000 } : d
+            ),
           }))
 
           // Fallback: if stream payload omitted pending_email, pull latest state from backend.
@@ -217,6 +260,9 @@ export function useStore() {
             redoCount: data.redo_count ?? s.redoCount,
             lastSavedPath: data.last_saved_path || s.lastSavedPath,
             pendingEmail: data.pending_email ?? s.pendingEmail,
+            documents: s.documents.map(d =>
+              d.id === s.activeDocumentId ? { ...d, title: s.documentTitle, updated_at: Date.now() / 1000 } : d
+            ),
           }))
 
           // Fallback: if stream payload omitted pending_email, pull latest state from backend.
@@ -248,12 +294,69 @@ export function useStore() {
   }, [state.sessionId, state.documentTitle, state.documentContent])
 
   const setTitle = useCallback((title: string) => {
-    setState(s => ({ ...s, documentTitle: title }))
-  }, [])
+    setState(s => ({
+      ...s,
+      documentTitle: title,
+      documents: s.documents.map(d =>
+        d.id === s.activeDocumentId ? { ...d, title } : d
+      ),
+    }))
+
+    if (state.sessionId && state.activeDocumentId) {
+      void api.syncDocument(state.sessionId, state.activeDocumentId, { title }).catch(() => {})
+    }
+  }, [state.sessionId, state.activeDocumentId])
 
   const updateDocumentContent = useCallback((newContent: string) => {
     setState(s => ({ ...s, documentContent: newContent }))
-  }, [])
+    if (state.sessionId && state.activeDocumentId) {
+      void api.syncDocument(state.sessionId, state.activeDocumentId, { content: newContent }).catch(() => {})
+    }
+  }, [state.sessionId, state.activeDocumentId])
+
+  const createDocument = useCallback(async (title?: string) => {
+    if (!state.sessionId) return
+    try {
+      const doc = await api.createDocument(state.sessionId, { title })
+      const docs = await api.listDocuments(state.sessionId)
+      setState(s => ({
+        ...s,
+        documents: docs.documents,
+        activeDocumentId: docs.active_document_id,
+        documentTitle: doc.document_title,
+        documentContent: doc.document_content,
+        undoCount: doc.undo_count,
+        redoCount: doc.redo_count,
+        lastSavedPath: doc.last_saved_path,
+        pendingEmail: doc.pending_email ?? null,
+        chatMessages: [],
+      }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to create document'
+      setState(s => ({ ...s, error: msg }))
+    }
+  }, [state.sessionId])
+
+  const switchDocument = useCallback(async (documentId: string) => {
+    if (!state.sessionId) return
+    try {
+      const doc = await api.switchDocument(state.sessionId, { document_id: documentId })
+      setState(s => ({
+        ...s,
+        activeDocumentId: documentId,
+        documentTitle: doc.document_title,
+        documentContent: doc.document_content,
+        undoCount: doc.undo_count,
+        redoCount: doc.redo_count,
+        lastSavedPath: doc.last_saved_path,
+        pendingEmail: doc.pending_email ?? null,
+        chatMessages: [],
+      }))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to switch document'
+      setState(s => ({ ...s, error: msg }))
+    }
+  }, [state.sessionId])
 
   const handleUndo = useCallback(() => {
     sendMessage('Undo the last change')
@@ -271,6 +374,8 @@ export function useStore() {
 
     const freshState = {
       sessionId: null,
+      activeDocumentId: null,
+      documents: [],
       loading: false,
       initializing: true,
       error: null,
@@ -290,6 +395,24 @@ export function useStore() {
       initRef.current = false
       try {
         const { session_id } = await api.createSession()
+        let documents: SessionDocument[] = []
+        let activeDocumentId: string | null = null
+        try {
+          const docs = await api.listDocuments(session_id)
+          documents = docs.documents
+          activeDocumentId = docs.active_document_id
+        } catch {
+          documents = []
+          activeDocumentId = null
+        }
+
+        let activeDocState = null as any
+        try {
+          activeDocState = await api.getDocument(session_id)
+        } catch {
+          activeDocState = null
+        }
+
         let gmailConnected = false
         try {
           const gmailStatus = await api.checkGmailStatus(session_id)
@@ -297,7 +420,20 @@ export function useStore() {
         } catch {
           gmailConnected = false
         }
-        setState(s => ({ ...s, sessionId: session_id, initializing: false, gmailConnected }))
+        setState(s => ({
+          ...s,
+          sessionId: session_id,
+          activeDocumentId,
+          documents,
+          documentContent: activeDocState?.document_content ?? s.documentContent,
+          documentTitle: activeDocState?.document_title ?? s.documentTitle,
+          undoCount: activeDocState?.undo_count ?? s.undoCount,
+          redoCount: activeDocState?.redo_count ?? s.redoCount,
+          lastSavedPath: activeDocState?.last_saved_path ?? s.lastSavedPath,
+          pendingEmail: activeDocState?.pending_email ?? s.pendingEmail,
+          initializing: false,
+          gmailConnected,
+        }))
       } catch {
         setState(s => ({ ...s, initializing: false }))
       }
@@ -392,6 +528,8 @@ export function useStore() {
     initialize,
     sendMessage,
     sendMessageWithSelection,
+    createDocument,
+    switchDocument,
     setTitle,
     updateDocumentContent,
     handleUndo,

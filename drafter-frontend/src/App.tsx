@@ -81,6 +81,7 @@ function ErrorScreen({ message }: { message: string }) {
 export default function App() {
   const {
     state, initialize, sendMessage, sendMessageWithSelection, setTitle, updateDocumentContent,
+    createDocument, switchDocument,
     handleUndo, handleRedo, resetSession, clearError, saveDocument, connectGmail,
     disconnectGmail, changeGmailAccount,
     confirmPendingEmail, cancelPendingEmail,
@@ -181,6 +182,8 @@ export default function App() {
       {/* Sidebar */}
       <div className="relative z-10">
         <Sidebar
+          documents={state.documents.map(d => ({ id: d.id, title: d.title }))}
+          activeDocumentId={state.activeDocumentId}
           documentTitle={state.documentTitle}
           undoCount={state.undoCount}
           redoCount={state.redoCount}
@@ -190,6 +193,8 @@ export default function App() {
           onTitleChange={setTitle}
           onQuickAction={handleQuickAction}
           onSave={handleSave}
+          onCreateDocument={() => createDocument('Untitled')}
+          onSwitchDocument={switchDocument}
           onConnectGmail={connectGmail}
           onDisconnectGmail={disconnectGmail}
           onChangeGmailAccount={changeGmailAccount}

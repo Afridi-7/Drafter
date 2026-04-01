@@ -84,12 +84,37 @@ class SendMessageResponse(BaseModel):
 
 
 class DocumentStateResponse(BaseModel):
+    document_id: str | None = None
     document_content: str
     document_title: str
     undo_count: int
     redo_count: int
     last_saved_path: str
     pending_email: dict[str, str] | None = None
+
+
+class DocumentInfo(BaseModel):
+    id: str
+    title: str
+    updated_at: float
+
+
+class DocumentsResponse(BaseModel):
+    documents: list[DocumentInfo]
+    active_document_id: str
+
+
+class CreateDocumentRequest(BaseModel):
+    title: str | None = None
+
+
+class SwitchDocumentRequest(BaseModel):
+    document_id: str
+
+
+class SyncDocumentRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
 
 
 class SaveDocumentRequest(BaseModel):
@@ -115,6 +140,109 @@ class PendingEmailConfirmRequest(BaseModel):
     to: str | None = None
     subject: str | None = None
     body: str | None = None
+
+
+def _ensure_multi_document_state(state: dict) -> dict:
+    """Ensure session state has multi-document structure and return active document dict."""
+    if "documents" not in state or "active_document_id" not in state:
+        default_id = "doc-1"
+        state["documents"] = {
+            default_id: {
+                "id": default_id,
+                "document_content": state.get("document_content", ""),
+                "document_title": state.get("document_title", "Untitled"),
+                "document_history": list(state.get("document_history", [])),
+                "redo_stack": list(state.get("redo_stack", [])),
+                "last_saved_path": state.get("last_saved_path", ""),
+                "last_saved_b64": state.get("last_saved_b64", ""),
+                "last_saved_format": state.get("last_saved_format", ""),
+                "pending_email": state.get("pending_email", None),
+                "updated_at": time.time(),
+            }
+        }
+        state["document_order"] = [default_id]
+        state["active_document_id"] = default_id
+
+    active_id = state.get("active_document_id")
+    documents = state.get("documents", {})
+    if not active_id or active_id not in documents:
+        order = state.get("document_order", [])
+        if order:
+            active_id = order[0]
+        elif documents:
+            active_id = next(iter(documents.keys()))
+        else:
+            active_id = "doc-1"
+            documents[active_id] = {
+                "id": active_id,
+                "document_content": "",
+                "document_title": "Untitled",
+                "document_history": [],
+                "redo_stack": [],
+                "last_saved_path": "",
+                "last_saved_b64": "",
+                "last_saved_format": "",
+                "pending_email": None,
+                "updated_at": time.time(),
+            }
+            state["document_order"] = [active_id]
+        state["active_document_id"] = active_id
+
+    return documents[active_id]
+
+
+def _active_document_to_agent_state(session_id: str, state: dict) -> dict:
+    doc = _ensure_multi_document_state(state)
+    return {
+        "session_id": session_id,
+        "messages": list(state.get("messages", [])),
+        "document_content": doc.get("document_content", ""),
+        "document_title": doc.get("document_title", "Untitled"),
+        "document_history": list(doc.get("document_history", [])),
+        "redo_stack": list(doc.get("redo_stack", [])),
+        "last_saved_path": doc.get("last_saved_path", ""),
+        "last_saved_b64": doc.get("last_saved_b64", ""),
+        "last_saved_format": doc.get("last_saved_format", ""),
+        "pending_email": doc.get("pending_email", None),
+    }
+
+
+def _merge_agent_result_into_session(state: dict, result_state: dict) -> None:
+    doc = _ensure_multi_document_state(state)
+    doc["document_content"] = result_state.get("document_content", "")
+    doc["document_title"] = result_state.get("document_title", "Untitled")
+    doc["document_history"] = list(result_state.get("document_history", []))
+    doc["redo_stack"] = list(result_state.get("redo_stack", []))
+    doc["last_saved_path"] = result_state.get("last_saved_path", "")
+    doc["last_saved_b64"] = result_state.get("last_saved_b64", "")
+    doc["last_saved_format"] = result_state.get("last_saved_format", "")
+    doc["pending_email"] = result_state.get("pending_email", None)
+    doc["updated_at"] = time.time()
+
+    state["messages"] = list(result_state.get("messages", state.get("messages", [])))
+
+    # Keep legacy top-level fields mirrored for compatibility.
+    state["document_content"] = doc["document_content"]
+    state["document_title"] = doc["document_title"]
+    state["document_history"] = doc["document_history"]
+    state["redo_stack"] = doc["redo_stack"]
+    state["last_saved_path"] = doc["last_saved_path"]
+    state["last_saved_b64"] = doc["last_saved_b64"]
+    state["last_saved_format"] = doc["last_saved_format"]
+    state["pending_email"] = doc["pending_email"]
+
+
+def _document_state_response(session_state: dict) -> DocumentStateResponse:
+    doc = _ensure_multi_document_state(session_state)
+    return DocumentStateResponse(
+        document_id=session_state.get("active_document_id"),
+        document_content=doc.get("document_content", ""),
+        document_title=doc.get("document_title", "Untitled"),
+        undo_count=len(doc.get("document_history", [])),
+        redo_count=len(doc.get("redo_stack", [])),
+        last_saved_path=doc.get("last_saved_path", ""),
+        pending_email=doc.get("pending_email"),
+    )
 
 
 def _send_email_with_session(session_id: str, to: str, subject: str, body: str) -> str:
@@ -155,8 +283,118 @@ register_email_sender(_send_email_with_session)
 @app.post("/sessions", response_model=CreateSessionResponse)
 def create_new_session():
     sid = create_session()
-    _sessions[sid] = {}
+    _sessions[sid] = {
+        "messages": [],
+        "documents": {
+            "doc-1": {
+                "id": "doc-1",
+                "document_content": "",
+                "document_title": "Untitled",
+                "document_history": [],
+                "redo_stack": [],
+                "last_saved_path": "",
+                "last_saved_b64": "",
+                "last_saved_format": "",
+                "pending_email": None,
+                "updated_at": time.time(),
+            }
+        },
+        "document_order": ["doc-1"],
+        "active_document_id": "doc-1",
+    }
     return CreateSessionResponse(session_id=sid)
+
+
+@app.get("/sessions/{session_id}/documents", response_model=DocumentsResponse)
+def list_documents(session_id: str):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    documents = state.get("documents", {})
+    order = state.get("document_order", list(documents.keys()))
+    infos: list[DocumentInfo] = []
+    for doc_id in order:
+        doc = documents.get(doc_id)
+        if not doc:
+            continue
+        infos.append(
+            DocumentInfo(
+                id=doc_id,
+                title=doc.get("document_title", "Untitled"),
+                updated_at=float(doc.get("updated_at", 0.0)),
+            )
+        )
+
+    return DocumentsResponse(
+        documents=infos,
+        active_document_id=state.get("active_document_id", infos[0].id if infos else "doc-1"),
+    )
+
+
+@app.post("/sessions/{session_id}/documents", response_model=DocumentStateResponse)
+def create_document(session_id: str, body: CreateDocumentRequest | None = None):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    doc_id = f"doc-{int(time.time() * 1000)}"
+    title = (body.title.strip() if body and body.title else "") or "Untitled"
+    state["documents"][doc_id] = {
+        "id": doc_id,
+        "document_content": "",
+        "document_title": title,
+        "document_history": [],
+        "redo_stack": [],
+        "last_saved_path": "",
+        "last_saved_b64": "",
+        "last_saved_format": "",
+        "pending_email": None,
+        "updated_at": time.time(),
+    }
+    state.setdefault("document_order", []).append(doc_id)
+    state["active_document_id"] = doc_id
+    return _document_state_response(state)
+
+
+@app.post("/sessions/{session_id}/documents/switch", response_model=DocumentStateResponse)
+def switch_document(session_id: str, body: SwitchDocumentRequest):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    if body.document_id not in state.get("documents", {}):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    state["active_document_id"] = body.document_id
+    return _document_state_response(state)
+
+
+@app.put("/sessions/{session_id}/documents/{document_id}", response_model=DocumentStateResponse)
+def sync_document(session_id: str, document_id: str, body: SyncDocumentRequest):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    doc = state.get("documents", {}).get(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if body.title is not None:
+        doc["document_title"] = body.title.strip() or "Untitled"
+    if body.content is not None:
+        doc["document_content"] = body.content
+    doc["updated_at"] = time.time()
+
+    if state.get("active_document_id") == document_id:
+        state["document_title"] = doc.get("document_title", "Untitled")
+        state["document_content"] = doc.get("document_content", "")
+
+    return _document_state_response(state)
 
 
 @app.post("/sessions/{session_id}/messages", response_model=SendMessageResponse)
@@ -165,31 +403,31 @@ def send_session_message(session_id: str, body: SendMessageRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    active_doc = _ensure_multi_document_state(state)
 
     # Inject title if provided
-    if body.document_title and state:
-        state["document_title"] = body.document_title
-    elif body.document_title and not state:
-        state = {"document_title": body.document_title}
+    if body.document_title:
+        active_doc["document_title"] = body.document_title
 
     result = send_message(
         session_id=session_id,
         user_message=body.message,
-        state=state,
+        state=_active_document_to_agent_state(session_id, state),
     )
 
-    _sessions[session_id] = result["state"]
+    _merge_agent_result_into_session(state, result["state"])
     
     response = SendMessageResponse(
         ai_response=result["ai_response"],
-        document_content=result["document_content"],
-        undo_count=len(result.get("document_history", [])),
-        redo_count=len(result.get("redo_stack", [])),
-        last_saved_path=result["last_saved_path"],
+        document_content=active_doc.get("document_content", ""),
+        undo_count=len(active_doc.get("document_history", [])),
+        redo_count=len(active_doc.get("redo_stack", [])),
+        last_saved_path=active_doc.get("last_saved_path", ""),
         last_saved_b64=result.get("last_saved_b64", ""),
         last_saved_format=result.get("last_saved_format", ""),
         tool_calls_made=result["tool_calls_made"],
-        pending_email=result.get("pending_email"),
+        pending_email=active_doc.get("pending_email"),
     )
     
     return response
@@ -199,15 +437,7 @@ def send_session_message(session_id: str, body: SendMessageRequest):
 def get_document(session_id: str):
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
-    state = _sessions[session_id]
-    return DocumentStateResponse(
-        document_content=state.get("document_content", ""),
-        document_title=state.get("document_title", "Untitled"),
-        undo_count=len(state.get("document_history", [])),
-        redo_count=len(state.get("redo_stack", [])),
-        last_saved_path=state.get("last_saved_path", ""),
-        pending_email=state.get("pending_email"),
-    )
+    return _document_state_response(_sessions[session_id])
 
 
 @app.post("/sessions/{session_id}/save", response_model=SaveDocumentResponse)
@@ -217,8 +447,9 @@ def save_document_endpoint(session_id: str, body: SaveDocumentRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     
     state = _sessions[session_id]
-    content = state.get("document_content", "")
-    title = state.get("document_title", "Untitled")
+    doc = _ensure_multi_document_state(state)
+    content = doc.get("document_content", "")
+    title = doc.get("document_title", "Untitled")
     
     if not content.strip():
         raise HTTPException(status_code=400, detail="Document is empty")
@@ -294,9 +525,10 @@ def save_document_endpoint(session_id: str, body: SaveDocumentRequest):
             raise ValueError("Failed to encode file")
         
         # Update session state
-        state["last_saved_b64"] = b64
-        state["last_saved_format"] = fmt
-        state["last_saved_path"] = str(filepath)
+        doc["last_saved_b64"] = b64
+        doc["last_saved_format"] = fmt
+        doc["last_saved_path"] = str(filepath)
+        doc["updated_at"] = time.time()
         
         message = f"Saved as {filepath.name}"
         
@@ -316,21 +548,21 @@ def send_session_message_stream(session_id: str, body: SendMessageRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    active_doc = _ensure_multi_document_state(state)
 
     # Inject title if provided
-    if body.document_title and state:
-        state["document_title"] = body.document_title
-    elif body.document_title and not state:
-        state = {"document_title": body.document_title}
+    if body.document_title:
+        active_doc["document_title"] = body.document_title
 
     # Get full response from agent
     result = send_message(
         session_id=session_id,
         user_message=body.message,
-        state=state,
+        state=_active_document_to_agent_state(session_id, state),
     )
 
-    _sessions[session_id] = result["state"]
+    _merge_agent_result_into_session(state, result["state"])
     
     def event_generator():
         # Yield tool calls first
@@ -347,11 +579,11 @@ def send_session_message_stream(session_id: str, body: SendMessageRequest):
         # Send completion with metadata
         completion = {
             "type": "complete",
-            "document_content": result["document_content"],
-            "undo_count": len(result.get("document_history", [])),
-            "redo_count": len(result.get("redo_stack", [])),
-            "last_saved_path": result["last_saved_path"],
-            "pending_email": result.get("pending_email"),
+            "document_content": active_doc.get("document_content", ""),
+            "undo_count": len(active_doc.get("document_history", [])),
+            "redo_count": len(active_doc.get("redo_stack", [])),
+            "last_saved_path": active_doc.get("last_saved_path", ""),
+            "pending_email": active_doc.get("pending_email"),
         }
         yield f"data: {json.dumps(completion)}\n\n"
     
@@ -373,12 +605,12 @@ def send_session_message_selection_stream(session_id: str, body: SendMessageWith
         raise HTTPException(status_code=404, detail="Session not found")
 
     state = _sessions[session_id]
+    _ensure_multi_document_state(state)
+    active_doc = _ensure_multi_document_state(state)
 
     # Inject title if provided
-    if body.document_title and state:
-        state["document_title"] = body.document_title
-    elif body.document_title and not state:
-        state = {"document_title": body.document_title}
+    if body.document_title:
+        active_doc["document_title"] = body.document_title
 
     # Import the selection-aware function
     from agent import send_message_with_selection
@@ -387,13 +619,13 @@ def send_session_message_selection_stream(session_id: str, body: SendMessageWith
     result = send_message_with_selection(
         session_id=session_id,
         user_message=body.message,
-        state=state,
+        state=_active_document_to_agent_state(session_id, state),
         selection_start=body.selection_start,
         selection_end=body.selection_end,
         selected_text=body.selected_text,
     )
 
-    _sessions[session_id] = result["state"]
+    _merge_agent_result_into_session(state, result["state"])
     
     def event_generator():
         # Yield tool calls first
@@ -410,11 +642,11 @@ def send_session_message_selection_stream(session_id: str, body: SendMessageWith
         # Send completion with metadata
         completion = {
             "type": "complete",
-            "document_content": result["document_content"],
-            "undo_count": len(result.get("document_history", [])),
-            "redo_count": len(result.get("redo_stack", [])),
-            "last_saved_path": result["last_saved_path"],
-            "pending_email": result.get("pending_email"),
+            "document_content": active_doc.get("document_content", ""),
+            "undo_count": len(active_doc.get("document_history", [])),
+            "redo_count": len(active_doc.get("redo_stack", [])),
+            "last_saved_path": active_doc.get("last_saved_path", ""),
+            "pending_email": active_doc.get("pending_email"),
         }
         yield f"data: {json.dumps(completion)}\n\n"
     
@@ -561,7 +793,8 @@ def confirm_pending_email(session_id: str, body: PendingEmailConfirmRequest | No
         raise HTTPException(status_code=404, detail="Session not found")
 
     state = _sessions[session_id]
-    pending = state.get("pending_email")
+    doc = _ensure_multi_document_state(state)
+    pending = doc.get("pending_email")
     if not pending:
         raise HTTPException(status_code=400, detail="No pending email to confirm")
 
@@ -581,7 +814,8 @@ def confirm_pending_email(session_id: str, body: PendingEmailConfirmRequest | No
         body=email_body,
     )
 
-    state["pending_email"] = None
+    doc["pending_email"] = None
+    doc["updated_at"] = time.time()
     return PendingEmailActionResponse(success=True, message=message)
 
 
@@ -592,8 +826,10 @@ def cancel_pending_email(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     state = _sessions[session_id]
-    if not state.get("pending_email"):
+    doc = _ensure_multi_document_state(state)
+    if not doc.get("pending_email"):
         return PendingEmailActionResponse(success=True, message="No pending email to cancel")
 
-    state["pending_email"] = None
+    doc["pending_email"] = None
+    doc["updated_at"] = time.time()
     return PendingEmailActionResponse(success=True, message="Pending email canceled")

@@ -23,12 +23,24 @@ export interface PendingEmail {
 }
 
 export interface DocumentState {
+  document_id?: string | null
   document_content: string
   document_title: string
   undo_count: number
   redo_count: number
   last_saved_path: string
   pending_email?: PendingEmail | null
+}
+
+export interface SessionDocument {
+  id: string
+  title: string
+  updated_at: number
+}
+
+export interface DocumentsResponse {
+  documents: SessionDocument[]
+  active_document_id: string
 }
 
 export interface SaveResponse {
@@ -58,6 +70,19 @@ export interface PendingEmailConfirmRequest {
   body?: string
 }
 
+export interface CreateDocumentRequest {
+  title?: string
+}
+
+export interface SwitchDocumentRequest {
+  document_id: string
+}
+
+export interface SyncDocumentRequest {
+  title?: string
+  content?: string
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -79,6 +104,27 @@ export const api = {
 
   getDocument: (sessionId: string) =>
     request<DocumentState>(`/sessions/${sessionId}/document`),
+
+  listDocuments: (sessionId: string) =>
+    request<DocumentsResponse>(`/sessions/${sessionId}/documents`),
+
+  createDocument: (sessionId: string, payload?: CreateDocumentRequest) =>
+    request<DocumentState>(`/sessions/${sessionId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
+
+  switchDocument: (sessionId: string, payload: SwitchDocumentRequest) =>
+    request<DocumentState>(`/sessions/${sessionId}/documents/switch`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  syncDocument: (sessionId: string, documentId: string, payload: SyncDocumentRequest) =>
+    request<DocumentState>(`/sessions/${sessionId}/documents/${documentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 
   sendMessage: (
     sessionId: string,
