@@ -7,8 +7,10 @@ A production-grade AI writing assistant with FastAPI backend (LangGraph + GPT-4)
 ## ✨ Features
 
 - 🤖 AI-powered writing and editing with GPT-4
+- ✏️ **Manual editing** - Type and edit directly in Source mode
+- ✂️ **Inline AI editing** - Select and edit specific text portions with AI
 - 📥 **Direct file downloads** - MD, TXT, DOCX, PDF formats
-- ✏️ Real-time document editing and preview
+- 👁️ Real-time document preview (Preview/Source modes)
 - ⏪ Unlimited undo/redo
 - 📊 Document statistics
 - 🎨 Beautiful, responsive UI
@@ -83,6 +85,25 @@ Files are also backed up in `backend/saved_documents/`
 | "Add a conclusion" | Add sections |
 | "Undo that" / "Redo" | Undo/redo changes |
 | "Show document statistics" | View stats |
+
+### ✨ NEW: Editing Modes
+
+#### Manual Editing
+1. Switch to **Source** mode in document panel
+2. **Click and type** directly in the text area
+3. Edit like any text editor - fully editable!
+4. Switch to Preview to see formatted result
+
+#### AI Selection Editing
+1. Switch to **Source** mode in document panel
+2. **Select** the text you want AI to edit
+3. Click **"Edit Selection with AI"** button (or press Ctrl+E)
+4. Enter your editing instruction
+5. Only the selected portion is changed!
+
+**Use cases:**
+- Manual: Quick typo fixes, adding content, formatting
+- AI: "Make this more professional", "Fix grammar", "Expand with examples"
 
 ---
 

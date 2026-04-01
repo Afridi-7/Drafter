@@ -1,18 +1,3 @@
-"""
-drafter/backend/main.py
-=======================
-FastAPI server exposing the Drafter agent over HTTP + SSE streaming.
-
-Endpoints:
-  POST /sessions                  → create new session
-  POST /sessions/{id}/messages    → send message, get full response
-  GET  /sessions/{id}/document    → get current document state
-  DELETE /sessions/{id}           → clear a session
-
-Run with:
-    uvicorn main:app --reload --port 8000
-"""
-
 from __future__ import annotations
 
 import json
@@ -27,7 +12,7 @@ from pydantic import BaseModel
 
 from agent import create_session, send_message
 
-# ── In-process session store (swap for Redis in production) ───────────────────
+#  In-process session store (swap for Redis in production) 
 _sessions: dict[str, dict] = {}
 
 app = FastAPI(
@@ -45,7 +30,7 @@ app.add_middleware(
 )
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+#  Schemas 
 
 class CreateSessionResponse(BaseModel):
     session_id: str
@@ -54,6 +39,14 @@ class CreateSessionResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     message: str
     document_title: str | None = "Untitled"
+
+
+class SendMessageWithSelectionRequest(BaseModel):
+    message: str
+    document_title: str | None = "Untitled"
+    selection_start: int
+    selection_end: int
+    selected_text: str
 
 
 class SendMessageResponse(BaseModel):
@@ -85,7 +78,7 @@ class SaveDocumentResponse(BaseModel):
     message: str
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+#  Routes 
 
 @app.post("/sessions", response_model=CreateSessionResponse)
 def create_new_session():
@@ -191,6 +184,68 @@ def send_session_message_stream(session_id: str, body: SendMessageRequest):
         session_id=session_id,
         user_message=body.message,
         state=state,
+    )
+
+    _sessions[session_id] = result["state"]
+    
+    def event_generator():
+        # Yield tool calls first
+        if result["tool_calls_made"]:
+            yield f"data: {json.dumps({'type': 'tools', 'tools': result['tool_calls_made']})}\n\n"
+        
+        # Stream response character by character
+        response_text = result["ai_response"]
+        for char in response_text:
+            chunk = {"type": "chunk", "text": char}
+            yield f"data: {json.dumps(chunk)}\n\n"
+            time.sleep(0.01)  # Small delay for natural streaming effect
+        
+        # Send completion with metadata
+        completion = {
+            "type": "complete",
+            "document_content": result["document_content"],
+            "undo_count": len(result.get("document_history", [])),
+            "redo_count": len(result.get("redo_stack", [])),
+            "last_saved_path": result["last_saved_path"],
+        }
+        yield f"data: {json.dumps(completion)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/sessions/{session_id}/messages-selection-stream")
+def send_session_message_selection_stream(session_id: str, body: SendMessageWithSelectionRequest):
+    """Streaming endpoint for editing only a selected portion of the document."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _sessions[session_id]
+
+    # Inject title if provided
+    if body.document_title and state:
+        state["document_title"] = body.document_title
+    elif body.document_title and not state:
+        state = {"document_title": body.document_title}
+
+    # Import the selection-aware function
+    from agent import send_message_with_selection
+    
+    # Get full response from agent with selection context
+    result = send_message_with_selection(
+        session_id=session_id,
+        user_message=body.message,
+        state=state,
+        selection_start=body.selection_start,
+        selection_end=body.selection_end,
+        selected_text=body.selected_text,
     )
 
     _sessions[session_id] = result["state"]

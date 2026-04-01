@@ -1,4 +1,3 @@
-// src/hooks/useStore.ts
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../api/client'
 
@@ -152,8 +151,73 @@ export function useStore() {
     }
   }, [state.sessionId, state.documentTitle])
 
+  const sendMessageWithSelection = useCallback(async (
+    message: string,
+    selectionStart: number,
+    selectionEnd: number,
+    selectedText: string
+  ) => {
+    setState(s => ({ ...s, loading: true, error: null }))
+
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: `Edit selection: "${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}" - ${message}`,
+      timestamp: new Date(),
+    }
+
+    const aiMsgId = crypto.randomUUID()
+    const aiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    }
+
+    setState(s => ({ ...s, chatMessages: [...s.chatMessages, userMsg, aiMsg] }))
+
+    try {
+      await api.sendMessageWithSelectionStream(
+        state.sessionId!,
+        message,
+        state.documentTitle,
+        selectionStart,
+        selectionEnd,
+        selectedText,
+        (char: string) => {
+          setState(s => ({
+            ...s,
+            chatMessages: s.chatMessages.map(m =>
+              m.id === aiMsgId ? { ...m, content: m.content + char } : m
+            ),
+          }))
+        },
+        (data: any) => {
+          setState(s => ({
+            ...s,
+            loading: false,
+            documentContent: data.document_content ?? s.documentContent,
+            undoCount: data.undo_count ?? s.undoCount,
+            redoCount: data.redo_count ?? s.redoCount,
+            lastSavedPath: data.last_saved_path || s.lastSavedPath,
+          }))
+        },
+        (error: string) => {
+          setState(s => ({ ...s, loading: false, error }))
+        }
+      )
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      setState(s => ({ ...s, loading: false, error: msg }))
+    }
+  }, [state.sessionId, state.documentTitle, state.documentContent])
+
   const setTitle = useCallback((title: string) => {
     setState(s => ({ ...s, documentTitle: title }))
+  }, [])
+
+  const updateDocumentContent = useCallback((newContent: string) => {
+    setState(s => ({ ...s, documentContent: newContent }))
   }, [])
 
   const handleUndo = useCallback(() => {
@@ -224,7 +288,9 @@ export function useStore() {
     state,
     initialize,
     sendMessage,
+    sendMessageWithSelection,
     setTitle,
+    updateDocumentContent,
     handleUndo,
     handleRedo,
     resetSession,

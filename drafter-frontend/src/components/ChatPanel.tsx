@@ -1,4 +1,3 @@
-// src/components/ChatPanel.tsx
 import React, { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'

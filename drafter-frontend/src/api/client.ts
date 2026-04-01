@@ -1,5 +1,3 @@
-// src/api/client.ts
-
 const BASE = '/api'
 
 export interface SessionResponse {
@@ -75,6 +73,67 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, document_title: documentTitle }),
+      })
+
+      if (!response.ok) throw new Error(`API error ${response.status}`)
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response stream')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'chunk') {
+                onChunk(data.text)
+              } else if (data.type === 'complete') {
+                onComplete(data)
+              }
+            } catch (e) {
+              // Skip parsing errors
+            }
+          }
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      onError(msg)
+    }
+  },
+
+  sendMessageWithSelectionStream: async (
+    sessionId: string,
+    message: string,
+    documentTitle: string,
+    selectionStart: number,
+    selectionEnd: number,
+    selectedText: string,
+    onChunk: (char: string) => void,
+    onComplete: (data: any) => void,
+    onError: (err: string) => void
+  ) => {
+    try {
+      const response = await fetch(`${BASE}/sessions/${sessionId}/messages-selection-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          document_title: documentTitle,
+          selection_start: selectionStart,
+          selection_end: selectionEnd,
+          selected_text: selectedText,
+        }),
       })
 
       if (!response.ok) throw new Error(`API error ${response.status}`)

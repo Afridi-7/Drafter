@@ -1,20 +1,3 @@
-"""
-drafter/backend/agent.py
-========================
-Production-level document drafting agent built with LangGraph + GPT-4o.
-
-Improvements over original:
-  - Thread-safe context using threading.local (no shared global mutation)
-  - Proper conditional routing (agent only goes to tools when tool_calls exist)
-  - SQLite persistence option (swap MemorySaver → SqliteSaver)
-  - Streaming generator support
-  - Export to .docx, .md, .txt with base64 download payload
-  - Richer system prompt with document-aware suggestions
-  - Full undo / redo with 50-version cap
-  - Section insert (insert_after_section) tool added
-  - Clean public API consumed by FastAPI
-"""
-
 from __future__ import annotations
 
 import base64
@@ -46,7 +29,7 @@ load_dotenv()
 OUTPUT_DIR = Path.home() / "Documents" / "Drafter_Documents"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Thread-local context (safe for concurrent requests) ───────────────────────
+#  Thread-local context (safe for concurrent requests) 
 _local = threading.local()
 
 
@@ -73,9 +56,8 @@ def _push_history(new_content: str) -> None:
     ctx["document_content"] = new_content
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # STATE
-# ══════════════════════════════════════════════════════════════════════════════
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -88,9 +70,8 @@ class AgentState(TypedDict):
     last_saved_format: str
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # TOOLS
-# ══════════════════════════════════════════════════════════════════════════════
 
 @tool
 def update_document(content: str) -> str:
@@ -354,7 +335,34 @@ def save_document(filename: str, format: str = "md") -> str:
         return f"❌ {str(e)}"
 
 
-# ── Tool registry ─────────────────────────────────────────────────────────────
+@tool
+def replace_selected_text(selected_text: str, new_text: str, selection_start: int, selection_end: int) -> str:
+    """Replace a selected portion of the document with new text.
+    This is used for inline editing where only part of the document should be changed.
+    
+    Args:
+        selected_text: The text that was selected by the user (for verification).
+        new_text: The new text to replace the selection with.
+        selection_start: Character position where selection starts.
+        selection_end: Character position where selection ends.
+    """
+    ctx = _ctx()
+    doc = ctx["document_content"]
+    
+    # Verify the selection matches what we expect
+    actual_selection = doc[selection_start:selection_end]
+    if actual_selection != selected_text:
+        return f"❌ Selection mismatch. Document may have changed. Expected:\n{selected_text}\n\nActual:\n{actual_selection}"
+    
+    # Replace only the selected portion
+    new_doc = doc[:selection_start] + new_text + doc[selection_end:]
+    _push_history(new_doc)
+    
+    word_count = len(new_text.split())
+    return f"✅ Selection replaced ({word_count} words in new text).\n\nCURRENT:\n{_ctx()['document_content']}"
+
+
+#  Tool registry 
 TOOLS = [
     update_document,
     append_to_document,
@@ -365,9 +373,10 @@ TOOLS = [
     redo_last_change,
     get_document_stats,
     save_document,
+    replace_selected_text,
 ]
 
-# ── Model ─────────────────────────────────────────────────────────────────────
+#  Model 
 _model = ChatOpenAI(
     model="gpt-4o",
     temperature=0.7,
@@ -375,9 +384,8 @@ _model = ChatOpenAI(
 ).bind_tools(TOOLS, tool_choice="auto")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # GRAPH NODES
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _sync_ctx_from_state(state: AgentState) -> None:
     ctx = _ctx()
@@ -433,6 +441,7 @@ DOCUMENT INFO:
 • prepend_to_document(content)  → Add content to the beginning
 • replace_section(old, new)     → Find and replace specific text
 • insert_after_section(heading, content) → Insert after a heading
+• replace_selected_text(selected_text, new_text, selection_start, selection_end) → Replace a user-selected portion (inline editing)
 • undo_last_change()            → Undo last change
 • redo_last_change()            → Redo last change
 • get_document_stats()          → Get word count, reading time
@@ -513,9 +522,8 @@ def should_continue(state: AgentState) -> str:
     return END
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # GRAPH ASSEMBLY
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _build_graph():
     g = StateGraph(AgentState)
@@ -531,9 +539,8 @@ def _build_graph():
 _graph = _build_graph()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # PUBLIC API
-# ══════════════════════════════════════════════════════════════════════════════
 
 def create_session() -> str:
     return str(uuid.uuid4())
@@ -655,6 +662,130 @@ def send_message(
                     tool_calls_made = [tc["name"] for tc in msg.tool_calls]
 
                 break
+
+    result = {
+        "ai_response": ai_response,
+        "document_content": final_state.get("document_content", ""),
+        "document_history": final_state.get("document_history", []),
+        "redo_stack": final_state.get("redo_stack", []),
+        "last_saved_path": final_state.get("last_saved_path", ""),
+        "last_saved_b64": final_state.get("last_saved_b64", ""),
+        "last_saved_format": final_state.get("last_saved_format", ""),
+        "tool_calls_made": tool_calls_made,
+        "state": final_state,
+    }
+    return result
+
+
+def send_message_with_selection(
+    session_id: str,
+    user_message: str,
+    state: dict[str, Any],
+    selection_start: int,
+    selection_end: int,
+    selected_text: str,
+) -> dict:
+    """Send a message with selection context to edit only a portion of the document.
+    
+    Args:
+        session_id: Unique session identifier
+        user_message: The user's prompt for editing the selection
+        state: Current session state
+        selection_start: Character position where selection starts
+        selection_end: Character position where selection ends
+        selected_text: The actual selected text
+        
+    Returns:
+        Dictionary with ai_response, updated document_content, and state
+    """
+    if not _graph:
+        return {
+            "ai_response": "Agent not initialized",
+            "document_content": "",
+            "document_history": [],
+            "redo_stack": [],
+            "last_saved_path": "",
+            "last_saved_b64": "",
+            "last_saved_format": "",
+            "tool_calls_made": [],
+            "state": state,
+        }
+    
+    # Ensure all required fields exist in state
+    state.setdefault("document_content", "")
+    state.setdefault("document_history", [])
+    state.setdefault("redo_stack", [])
+    state.setdefault("document_title", "Untitled")
+    state.setdefault("last_saved_path", "")
+    state.setdefault("last_saved_b64", "")
+    state.setdefault("last_saved_format", "")
+    
+    # Initialize context for this session
+    _local.data = {
+        "document_content": state.get("document_content", ""),
+        "document_history": list(state.get("document_history", [])),
+        "redo_stack": list(state.get("redo_stack", [])),
+        "document_title": state.get("document_title", "Untitled"),
+        "last_saved_path": state.get("last_saved_path", ""),
+        "last_saved_b64": state.get("last_saved_b64", ""),
+        "last_saved_format": state.get("last_saved_format", ""),
+        "selection_start": selection_start,
+        "selection_end": selection_end,
+        "selected_text": selected_text,
+    }
+
+    # Enhanced message with selection context
+    enhanced_message = f"""INLINE EDITING MODE:
+
+The user has selected a specific portion of the document to edit. You MUST use the replace_selected_text tool to edit ONLY this selection.
+
+SELECTED TEXT (to be edited):
+\"\"\"
+{selected_text}
+\"\"\"
+
+SELECTION POSITION: characters {selection_start} to {selection_end}
+
+USER'S REQUEST:
+{user_message}
+
+YOU MUST:
+1. Call replace_selected_text(selected_text="{selected_text}", new_text="...", selection_start={selection_start}, selection_end={selection_end})
+2. Keep the rest of the document UNCHANGED
+3. Only modify the selected portion according to the user's request
+"""
+
+    state["messages"] = list(state.get("messages", [])) + [
+        HumanMessage(content=enhanced_message)
+    ]
+
+    config = {"configurable": {"thread_id": session_id}}
+
+    final_state: dict | None = None
+    for step in _graph.stream(state, config=config, stream_mode="values"):
+        final_state = step
+
+    if final_state is None:
+        return {
+            "ai_response": "Something went wrong. Please try again.",
+            "document_content": state.get("document_content", ""),
+            "document_history": state.get("document_history", []),
+            "redo_stack": state.get("redo_stack", []),
+            "last_saved_path": "",
+            "last_saved_b64": "",
+            "last_saved_format": "",
+            "tool_calls_made": [],
+            "state": state,
+        }
+
+    ai_response = ""
+    tool_calls_made: list[str] = []
+    for msg in reversed(final_state["messages"]):
+        if isinstance(msg, AIMessage) and msg.content:
+            ai_response = msg.content
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                tool_calls_made = [tc["name"] for tc in msg.tool_calls]
+            break
 
     result = {
         "ai_response": ai_response,

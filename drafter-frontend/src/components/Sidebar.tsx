@@ -1,4 +1,3 @@
-// src/components/Sidebar.tsx
 import React, { useState } from 'react'
 import {
   Feather, Zap, Download, Trash2, ChevronRight,

@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useEffect, useState } from 'react'
 import Sidebar        from './components/Sidebar'
 import ChatPanel      from './components/ChatPanel'
@@ -9,7 +8,7 @@ import clsx from 'clsx'
 
 type Panel = 'chat' | 'document'
 
-/* ── Loading screen ────────────────────────────────── */
+/*  Loading screen  */
 function LoadingScreen() {
   return (
     <div
@@ -44,7 +43,7 @@ function LoadingScreen() {
   )
 }
 
-/* ── Error screen ───────────────────────────────────── */
+/*  Error screen  */
 function ErrorScreen({ message }: { message: string }) {
   return (
     <div
@@ -78,10 +77,10 @@ function ErrorScreen({ message }: { message: string }) {
   )
 }
 
-/* ── Main App ──────────────────────────────────────── */
+/*  Main App  */
 export default function App() {
   const {
-    state, initialize, sendMessage, setTitle,
+    state, initialize, sendMessage, sendMessageWithSelection, setTitle, updateDocumentContent,
     handleUndo, handleRedo, resetSession, clearError, saveDocument,
   } = useStore()
 
@@ -92,6 +91,13 @@ export default function App() {
   const handleQuickAction = (prompt: string) => {
     setActivePanel('chat')
     sendMessage(prompt)
+  }
+
+  const handleEditSelection = (instruction: string, selectedText: string, selectionStart: number, selectionEnd: number) => {
+    // Switch to chat panel to show the AI response
+    setActivePanel('chat')
+    // Send the instruction with selection
+    sendMessageWithSelection(instruction, selectionStart, selectionEnd, selectedText)
   }
 
   const handleSave = async (format: string) => {
@@ -229,6 +235,8 @@ export default function App() {
             <DocumentPanel
               title={state.documentTitle}
               content={state.documentContent}
+              onContentChange={updateDocumentContent}
+              onEditSelection={handleEditSelection}
             />
           </div>
         </div>
