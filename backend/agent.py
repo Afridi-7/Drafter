@@ -18,13 +18,12 @@ Improvements over original:
 from __future__ import annotations
 
 import base64
-import os
 import re
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Generator, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.messages import (
@@ -224,18 +223,20 @@ def get_document_stats() -> str:
     )
 
 
-@tool
-def save_document(filename: str, format: str = "md") -> str:
-    """Save the document to disk and prepare a download payload.
-
+def _save_document_helper(content: str, title: str, filename: str, format: str = "md") -> tuple[str, str, str]:
+    """Helper function to save document and return (base64, format, message).
+    
     Args:
-        filename: Base name for the file (no extension).
-        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'.
+        content: Document content to save
+        title: Document title
+        filename: Base name for the file (no extension)
+        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'
+        
+    Returns:
+        Tuple of (base64_string, actual_format, message)
     """
-    ctx = _ctx()
-    content = ctx["document_content"]
     if not content.strip():
-        return "❌ Cannot save — document is empty."
+        raise ValueError("Cannot save — document is empty.")
 
     safe = re.sub(r"[^\w\-_\. ]", "_", filename).strip() or (
         f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -250,7 +251,7 @@ def save_document(filename: str, format: str = "md") -> str:
         try:
             from docx import Document as DocxDoc
             doc = DocxDoc()
-            doc.add_heading(ctx["document_title"], 0)
+            doc.add_heading(title, 0)
             for para in content.split("\n\n"):
                 if para.strip():
                     doc.add_paragraph(para.strip())
@@ -267,7 +268,6 @@ def save_document(filename: str, format: str = "md") -> str:
             from reportlab.lib.units import cm
             from reportlab.lib import colors
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-            from reportlab.lib.enums import TA_LEFT
 
             doc_pdf = SimpleDocTemplate(
                 str(filepath),
@@ -291,7 +291,7 @@ def save_document(filename: str, format: str = "md") -> str:
                 textColor=colors.HexColor("#111111"),
             )
 
-            story = [Paragraph(ctx["document_title"], title_style)]
+            story = [Paragraph(title, title_style)]
             for line in content.split("\n"):
                 stripped = line.strip()
                 if not stripped:
@@ -311,11 +311,6 @@ def save_document(filename: str, format: str = "md") -> str:
             fmt = "md"
             filepath = OUTPUT_DIR / f"{safe}.{fmt}"
             filepath.write_text(content, encoding="utf-8")
-            return (
-                "⚠️ reportlab not installed — saved as Markdown instead.\n"
-                f"   Path: {filepath}\n"
-                "Install with: pip install reportlab"
-            )
     else:
         filepath.write_text(content, encoding="utf-8")
 
@@ -323,16 +318,39 @@ def save_document(filename: str, format: str = "md") -> str:
     with open(filepath, "rb") as fh:
         b64 = base64.b64encode(fh.read()).decode()
 
-    ctx["last_saved_path"] = str(filepath)
-    ctx["last_saved_b64"] = b64
-    ctx["last_saved_format"] = fmt
-
-    return (
+    message = (
         f"💾 Saved!\n"
         f"   Path   : {filepath}\n"
         f"   Format : {fmt.upper()}\n"
         f"   Words  : {len(content.split()):,}"
     )
+    
+    return b64, fmt, message
+
+
+@tool
+def save_document(filename: str, format: str = "md") -> str:
+    """Save the document to disk and prepare a download payload.
+
+    Args:
+        filename: Base name for the file (no extension).
+        format: 'txt', 'md', 'docx', or 'pdf'. Default is 'md'.
+    """
+    ctx = _ctx()
+    content = ctx["document_content"]
+    title = ctx["document_title"]
+    
+    try:
+        b64, fmt, message = _save_document_helper(content, title, filename, format)
+        
+        # Update context
+        ctx["last_saved_b64"] = b64
+        ctx["last_saved_format"] = fmt
+        ctx["last_saved_path"] = str(OUTPUT_DIR / f"{filename}.{fmt}")
+        
+        return message
+    except ValueError as e:
+        return f"❌ {str(e)}"
 
 
 # ── Tool registry ─────────────────────────────────────────────────────────────
@@ -444,10 +462,6 @@ REMEMBER: Your tools are how you actually create content for the user. Always us
     )
 
     response = _model.invoke([system] + list(state["messages"]))
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        pass
-    else:
-        pass
     result = {"messages": [response], **_sync_state_from_ctx()}
     return result
 

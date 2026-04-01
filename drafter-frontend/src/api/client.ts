@@ -114,12 +114,9 @@ export const api = {
     }
   },
 
-  getDocument: (sessionId: string) =>
-    request<DocumentState>(`/sessions/${sessionId}/document`),
-
   saveDocument: (
     sessionId: string,
-    format: 'md' | 'txt' | 'docx'
+    format: 'md' | 'txt' | 'docx' | 'pdf'
   ) =>
     request<SaveResponse>(`/sessions/${sessionId}/save`, {
       method: 'POST',
@@ -130,25 +127,4 @@ export const api = {
     request<{ deleted: string }>(`/sessions/${sessionId}`, {
       method: 'DELETE',
     }),
-}
-
-export function triggerDownload(
-  b64: string,
-  format: string,
-  filename: string
-) {
-  const mime: Record<string, string> = {
-    md: 'text/markdown',
-    txt: 'text/plain',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  }
-  const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
-    type: mime[format] ?? 'application/octet-stream',
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${filename}.${format}`
-  a.click()
-  URL.revokeObjectURL(url)
 }

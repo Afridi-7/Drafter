@@ -1,6 +1,6 @@
 // src/hooks/useStore.ts
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { api, triggerDownload } from '../api/client'
+import { api } from '../api/client'
 
 export interface ChatMessage {
   id:        string

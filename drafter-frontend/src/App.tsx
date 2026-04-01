@@ -94,9 +94,42 @@ export default function App() {
     sendMessage(prompt)
   }
 
-  const handleSave = (format: string) => {
-    const safe = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
-    sendMessage(`Save the document as '${safe}' in ${format} format`)
+  const handleSave = async (format: string) => {
+    try {
+      if (!state.documentContent.trim()) {
+        throw new Error('Document is empty')
+      }
+      
+      // Get base64 from backend
+      const b64 = await saveDocument(format as 'md' | 'txt' | 'docx' | 'pdf')
+      
+      // Decode base64 and trigger download
+      const safe = state.documentTitle.replace(/[^\w\-]/g, '_') || 'document'
+      const binaryString = atob(b64)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+
+      const mimeTypes: Record<string, string> = {
+        md: 'text/markdown; charset=utf-8',
+        txt: 'text/plain; charset=utf-8',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        pdf: 'application/pdf',
+      }
+
+      const blob = new Blob([bytes], { type: mimeTypes[format] || 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${safe}.${format}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      throw error
+    }
   }
 
   if (state.initializing) return <LoadingScreen />
@@ -196,9 +229,6 @@ export default function App() {
             <DocumentPanel
               title={state.documentTitle}
               content={state.documentContent}
-              undoCount={state.undoCount}
-              redoCount={state.redoCount}
-              onSave={saveDocument}
             />
           </div>
         </div>

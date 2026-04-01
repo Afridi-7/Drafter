@@ -15,7 +15,6 @@ Run with:
 
 from __future__ import annotations
 
-import pickle
 import json
 import time
 from pathlib import Path
@@ -145,7 +144,7 @@ def get_document(session_id: str):
 
 
 @app.post("/sessions/{session_id}/save", response_model=SaveDocumentResponse)
-def save_document(session_id: str, body: SaveDocumentRequest):
+def save_document_endpoint(session_id: str, body: SaveDocumentRequest):
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -153,27 +152,24 @@ def save_document(session_id: str, body: SaveDocumentRequest):
     content = state.get("document_content", "")
     title = state.get("document_title", "Untitled")
     
-    # Send message to agent to save the document
-    from agent import save_document as agent_save_doc, _ctx
+    # Import the helper function from agent
+    from agent import _save_document_helper
     
-    # Call the save tool directly - it will handle file creation and base64 encoding
-    result_msg = agent_save_doc(content, title, body.format)
-    
-    # Get the context which has the base64 data
-    ctx = _ctx()
-    b64 = ctx.get("last_saved_b64", "")
-    fmt = ctx.get("last_saved_format", body.format)
-    
-    # Update session state with the saved info
-    state["last_saved_path"] = ctx.get("last_saved_path", "")
-    state["last_saved_b64"] = b64
-    state["last_saved_format"] = fmt
-    
-    return SaveDocumentResponse(
-        b64=b64,
-        format=fmt,
-        message=result_msg,
-    )
+    try:
+        # Call the helper function directly
+        b64, fmt, message = _save_document_helper(content, title, title, body.format)
+        
+        # Update session state with the saved info
+        state["last_saved_b64"] = b64
+        state["last_saved_format"] = fmt
+        
+        return SaveDocumentResponse(
+            b64=b64,
+            format=fmt,
+            message=message,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/sessions/{session_id}/messages-stream")
