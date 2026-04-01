@@ -1,162 +1,174 @@
-  # ✍️ Drafter — AI Writing Assistant
+# Drafter
 
-  A production-grade AI writing assistant with FastAPI backend (LangGraph + GPT-4) and React + TypeScript frontend.
+AI writing assistant with a FastAPI backend and React + TypeScript frontend.
 
-  ---
+It supports AI drafting, manual editing, selection-based rewrites, undo/redo, multi-format export, and Gmail OAuth email sending with confirmation.
 
-  ## ✨ Features
+## What You Get
 
-  - 🤖 AI-powered writing and editing with GPT-4
-  - ✏️ **Manual editing** - Type and edit directly in Source mode
-  - ✂️ **Inline AI editing** - Select and edit specific text portions with AI
-  - 📥 **Direct file downloads** - MD, TXT, DOCX, PDF formats
-  - 👁️ Real-time document preview (Preview/Source modes)
-  - ⏪ Unlimited undo/redo
-  - 📊 Document statistics
-  - 🎨 Beautiful, responsive UI
+- AI chat-driven document drafting and editing
+- Manual editing in the document panel
+- Selection edit workflow (edit only selected text)
+- Undo and redo support
+- Export to MD, TXT, DOCX, and PDF
+- Gmail OAuth connect, change account, and disconnect
+- Email send confirmation modal before actual send
 
-  ---
+## Tech Stack
 
-  ## 🚀 Quick Start
+- Frontend: React 18, TypeScript, Vite, Tailwind
+- Backend: FastAPI, LangGraph, LangChain, OpenAI
+- Document export: python-docx, reportlab
+- Email: Google OAuth + Gmail API
 
-  ### Prerequisites
-  - Python 3.11+
-  - Node.js 18+
-  - OpenAI API key
+## Project Structure
 
-  ### 1. Backend Setup
+```text
+Drafter/
+  backend/
+    agent.py
+    main.py
+    requirements.txt
+    saved_documents/
+  drafter-frontend/
+    package.json
+    src/
+      api/
+      components/
+      hooks/
+      App.tsx
+```
 
-  ```bash
-  cd backend
+## Prerequisites
 
-  # Create and activate virtual environment
-  python -m venv venv
-  venv\Scripts\activate          # Windows
-  # source venv/bin/activate     # macOS/Linux
+- Python 3.11+
+- Node.js 18+
+- npm
+- OpenAI API key
+- Google OAuth client (for Gmail features)
 
-  # Install dependencies
-  pip install -r requirements.txt
+## Environment Variables (Backend)
 
-  # Add OpenAI API key
-  cp .env.example .env
-  # Edit .env: OPENAI_API_KEY=sk-your-key-here
+Create backend/.env with:
 
-  # Start server
-  uvicorn main:app --reload --port 8000
-  ```
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+REDIRECT_URI=http://localhost:8000/auth/google/callback
+FRONTEND_URL=http://localhost:5173
+```
 
-  ### 2. Frontend Setup
+Notes:
 
-  ```bash
-  cd drafter-frontend
+- REDIRECT_URI must exactly match the callback URI configured in Google Cloud Console.
+- FRONTEND_URL should match your frontend dev URL.
 
-  # Install dependencies
-  npm install
+## Run Locally
 
-  # Start dev server
-  npm run dev
-  ```
+### 1) Start Backend
 
-  ### 3. Open Browser
-  Visit **http://localhost:5173**
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+```
 
-  ---
+### 2) Start Frontend
 
-  ## 📥 Download Files
+```bash
+cd drafter-frontend
+npm install
+npm run dev
+```
 
-  1. Write content using AI chat
-  2. Go to left sidebar
-  3. Select format (MD, TXT, DOCX, or PDF)
-  4. Click "Download" button
-  5. File downloads to your Downloads folder!
+Open http://localhost:5173
 
-  Files are also backed up in `backend/saved_documents/`
+## Build
 
-  ---
+Frontend production build:
 
-  ## 💬 Writing Commands
+```bash
+cd drafter-frontend
+npm run build
+```
 
-  | Command | Action |
-  |---------|--------|
-  | "Write a blog post about X" | Create new draft |
-  | "Improve the flow and clarity" | Enhance writing |
-  | "Make this more concise" | Shorten content |
-  | "Fix all grammar issues" | Fix grammar |
-  | "Add a conclusion" | Add sections |
-  | "Undo that" / "Redo" | Undo/redo changes |
-  | "Show document statistics" | View stats |
+## Core Workflows
 
-  ### ✨ NEW: Editing Modes
+### Drafting and Editing
 
-  #### Manual Editing
-  1. Switch to **Source** mode in document panel
-  2. **Click and type** directly in the text area
-  3. Edit like any text editor - fully editable!
-  4. Switch to Preview to see formatted result
+1. Enter prompts in chat to create or modify content.
+2. Edit manually in the document panel.
+3. Select text and use selection edit for targeted rewrites.
+4. Use undo/redo controls for document revisions.
 
-  #### AI Selection Editing
-  1. Switch to **Source** mode in document panel
-  2. **Select** the text you want AI to edit
-  3. Click **"Edit Selection with AI"** button (or press Ctrl+E)
-  4. Enter your editing instruction
-  5. Only the selected portion is changed!
+### Export
 
-  **Use cases:**
-  - Manual: Quick typo fixes, adding content, formatting
-  - AI: "Make this more professional", "Fix grammar", "Expand with examples"
+1. Choose format in the sidebar.
+2. Click Save and Download.
+3. Files are also written to backend/saved_documents and the system Documents folder used by backend export logic.
 
-  ---
+### Gmail OAuth and Sending
 
-  ## 📁 Project Structure
+1. Connect Gmail from the sidebar.
+2. Ask AI to send to a recipient.
+3. Review and edit recipient/subject/body in the confirmation modal.
+4. Confirm to send.
 
-  ```
-  drafter/
-  ├── backend/
-  │   ├── agent.py              # LangGraph agent with tools
-  │   ├── main.py               # FastAPI server
-  │   ├── requirements.txt      # Python dependencies
-  │   └── saved_documents/      # Downloaded files backup
-  │
-  └── drafter-frontend/
-      ├── src/
-      │   ├── components/       # React components
-      │   ├── hooks/            # Custom hooks
-      │   ├── api/              # API client
-      │   └── App.tsx           # Main app
-      └── package.json          # Node dependencies
-  ```
+Account management:
 
-  ---
+- Change Account: re-runs OAuth with account chooser.
+- Disconnect: clears active Gmail OAuth credentials.
 
-  ## 🛠️ Tech Stack
+## Session Behavior
 
-  **Frontend:** React 18, TypeScript, Vite, TailwindCSS  
-  **Backend:** FastAPI, LangChain, LangGraph, OpenAI GPT-4  
-  **Documents:** python-docx (DOCX), reportlab (PDF)
+- New session starts with clean document and chat state.
+- History is reset in the frontend when creating a new session.
 
-  ---
+## API Overview
 
-  ## 🐛 Troubleshooting
+Main backend endpoints:
 
-  **Connection Failed**
-  - Check backend is running on port 8000
-  - Visit http://localhost:8000/health
+- POST /sessions
+- GET /sessions/{session_id}/document
+- POST /sessions/{session_id}/messages
+- POST /sessions/{session_id}/messages-stream
+- POST /sessions/{session_id}/messages-selection-stream
+- POST /sessions/{session_id}/save
+- DELETE /sessions/{session_id}
+- GET /auth/google/login
+- GET /auth/google/callback
+- GET /auth/google/status
+- POST /auth/google/disconnect
+- POST /sessions/{session_id}/email/confirm
+- POST /sessions/{session_id}/email/cancel
+- GET /health
 
-  **OpenAI Error**
-  - Check `.env` file has valid API key
-  - Format: `OPENAI_API_KEY=sk-...`
+## Troubleshooting
 
-  **Download Not Working**
-  - Make sure document has content
-  - Check browser console (F12) for errors
-  - Refresh browser (F5)
+### Backend not reachable
 
-  ---
+- Ensure backend is running on port 8000.
+- Check http://localhost:8000/health.
 
-  ## 📝 License
+### Gmail OAuth issues
 
-  Personal project - use and modify freely!
+- Verify REDIRECT_URI matches Google Cloud Console exactly.
+- Ensure FRONTEND_URL is correct.
+- Reconnect using Change Account if token/account changed.
 
-  ---
+### Empty export or save errors
 
-  **Happy writing! 🚀**
+- Export requires non-empty document content.
+
+## Security Notes
+
+- Never commit .env to source control.
+- If any key is exposed, rotate it immediately.
+- Use separate credentials for local development and production.
+
+## License
+
+Internal/personal project. Add your preferred license if distributing.
