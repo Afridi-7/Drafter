@@ -1,4 +1,4 @@
-const BASE = '/api'
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api'
 
 export interface SessionResponse {
   session_id: string
@@ -87,7 +87,7 @@ async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
@@ -145,7 +145,7 @@ export const api = {
     onError: (err: string) => void
   ) => {
     try {
-      const response = await fetch(`${BASE}/sessions/${sessionId}/messages-stream`, {
+      const response = await fetch(`${API_BASE}/sessions/${sessionId}/messages-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, document_title: documentTitle }),
@@ -200,7 +200,7 @@ export const api = {
     onError: (err: string) => void
   ) => {
     try {
-      const response = await fetch(`${BASE}/sessions/${sessionId}/messages-selection-stream`, {
+      const response = await fetch(`${API_BASE}/sessions/${sessionId}/messages-selection-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -265,7 +265,7 @@ export const api = {
 
   // Gmail OAuth
   getGmailLoginUrl: (sessionId: string) =>
-    `http://localhost:8000/auth/google/login?session_id=${sessionId}`,
+    `${API_BASE}/auth/google/login?session_id=${sessionId}`,
 
   checkGmailStatus: (sessionId: string) =>
     request<GmailStatusResponse>(`/auth/google/status?session_id=${sessionId}`),

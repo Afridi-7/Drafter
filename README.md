@@ -95,6 +95,51 @@ cd drafter-frontend
 npm run build
 ```
 
+## Deploy (Render + Vercel)
+
+### Backend on Render
+
+1. Push this repository to GitHub.
+2. In Render, create a new Web Service from your repo.
+3. Use these settings:
+  - Root Directory: backend
+  - Build Command: pip install -r requirements.txt
+  - Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+4. Add environment variables in Render:
+  - OPENAI_API_KEY
+  - GOOGLE_CLIENT_ID
+  - GOOGLE_CLIENT_SECRET
+  - REDIRECT_URI (set to https://YOUR_RENDER_SERVICE.onrender.com/auth/google/callback)
+  - FRONTEND_URL (set to your Vercel domain)
+  - CORS_ORIGINS (comma-separated, include your Vercel domain and localhost)
+5. Deploy and copy the Render URL.
+
+Optional: this repo includes render.yaml for one-click Render Blueprint setup.
+
+### Frontend on Vercel
+
+1. In Vercel, import the same repository.
+2. Configure project:
+  - Root Directory: drafter-frontend
+  - Build Command: npm run build
+  - Output Directory: dist
+3. Add environment variable:
+  - VITE_API_BASE_URL=https://YOUR_RENDER_SERVICE.onrender.com
+4. Deploy and copy the Vercel URL.
+
+This repo includes drafter-frontend/vercel.json for SPA rewrites and output settings.
+
+### Google OAuth Final Setup
+
+In Google Cloud Console (OAuth client):
+
+- Authorized JavaScript origins:
+  - https://YOUR_VERCEL_PROJECT.vercel.app
+- Authorized redirect URIs:
+  - https://YOUR_RENDER_SERVICE.onrender.com/auth/google/callback
+
+After updating OAuth settings, redeploy backend/frontend if needed and test Gmail connect.
+
 ## Core Workflows
 
 ### Drafting and Editing
