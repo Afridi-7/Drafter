@@ -1,12 +1,6 @@
 # Drafter
 
-AI writing assistant with a FastAPI backend and React + TypeScript frontend.
-
-It supports AI drafting, manual editing, selection-based rewrites, undo/redo, multi-format export, and Gmail OAuth email sending with confirmation.
-
-## What You Get
-
-- AI chat-driven document drafting and editing
+- Multiple documents per session (create and switch documents)
 - Manual editing in the document panel
 - Selection edit workflow (edit only selected text)
 - Undo and redo support
@@ -18,21 +12,22 @@ It supports AI drafting, manual editing, selection-based rewrites, undo/redo, mu
 
 - Frontend: React 18, TypeScript, Vite, Tailwind
 - Backend: FastAPI, LangGraph, LangChain, OpenAI
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 - Document export: python-docx, reportlab
 - Email: Google OAuth + Gmail API
 
 ## Project Structure
 
 ```text
-Drafter/
-  backend/
-    agent.py
-    main.py
+- GET /sessions/{session_id}/documents
+- POST /sessions/{session_id}/documents
+- POST /sessions/{session_id}/documents/switch
+- PUT /sessions/{session_id}/documents/{document_id}
     requirements.txt
     saved_documents/
   drafter-frontend/
-    package.json
-    src/
+- A single session can contain multiple documents.
+- Document content/title/history are tracked per active document.
       api/
       components/
       hooks/

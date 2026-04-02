@@ -5,7 +5,6 @@ import time
 import os
 import base64
 from pathlib import Path
-from typing import Any
 from email.mime.text import MIMEText
 
 from fastapi import FastAPI, HTTPException
@@ -23,7 +22,7 @@ from agent import create_session, register_email_sender, send_message
 
 load_dotenv()
 
-#  In-process session store (swap for Redis in production) 
+
 _sessions: dict[str, dict] = {}
 
 # In-memory OAuth token store (sessionId -> credentials)

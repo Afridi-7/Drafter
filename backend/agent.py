@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import os
 import re
 import threading
 import uuid
@@ -21,7 +20,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 
 load_dotenv()
 
@@ -66,9 +64,8 @@ def _push_history(new_content: str) -> None:
     ctx["document_content"] = new_content
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # STATE
-# ══════════════════════════════════════════════════════════════════════════════
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -83,9 +80,9 @@ class AgentState(TypedDict):
     pending_email: dict[str, str] | None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # TOOLS
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 @tool
 def update_document(content: str) -> str:
@@ -401,7 +398,7 @@ def cancel_pending_email() -> str:
     return "✅ Pending email draft canceled."
 
 
-# ── Tool registry ─────────────────────────────────────────────────────────────
+#  Tool registry 
 TOOLS = [
     update_document,
     append_to_document,
@@ -416,8 +413,8 @@ TOOLS = [
     prepare_email_send,
     cancel_pending_email,
 ]
-# ── Tool registry ─────────────────────────────────────────────────────────────
-# ── State sync functions ─────────────────────────────────────────────────────────────
+#  Tool registry 
+#  State sync functions 
 
 def _sync_ctx_from_state(state: AgentState) -> None:
     """Sync thread-local context from state dict."""
@@ -449,9 +446,8 @@ def _sync_state_from_ctx() -> dict:
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # AGENT
-# ══════════════════════════════════════════════════════════════════════════════
 
 _base_model = ChatOpenAI(model="gpt-4o", temperature=1)
 _model = _base_model.bind_tools(TOOLS)
@@ -523,18 +519,13 @@ REMEMBER: Your tools are how you actually create content for the user. Always us
     )
 
     response = _model.invoke([system] + list(state["messages"]))
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        pass
-    else:
-        pass
     result = {"messages": [response], **_sync_state_from_ctx()}
     return result
 
 
 def tools_node(state: AgentState) -> dict:
     """Execute the tools called by the agent."""
-    from langchain_core.messages import ToolMessage
-    
+
     tool_messages = []
     last_message = state["messages"][-1] if state["messages"] else None
     
@@ -573,9 +564,8 @@ def should_continue(state: AgentState) -> str:
     return END
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 # GRAPH ASSEMBLY
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _build_graph():
     g = StateGraph(AgentState)
@@ -591,9 +581,7 @@ def _build_graph():
 _graph = _build_graph()
 
 
-# ═══════════════════════════════════════════════════════════_══════════════════
 # PUBLIC API
-# ══════════════════════════════════════════════════════════════════════════════
 
 def create_session() -> str:
     return str(uuid.uuid4())
@@ -711,8 +699,7 @@ def send_message(
     if any(t in document_edit_tools for t in tool_calls_made):
         ai_response = "✅ Updated the document. Review it in the document panel."
 
-    # Fallback: even if tool names are missing, do not duplicate long generated content in chat
-    # when the document content has changed.
+
     final_document_content = final_state.get("document_content", "")
     if final_document_content != initial_document_content:
         ai_response = "✅ Updated the document. Review it in the document panel."
@@ -790,5 +777,3 @@ def send_message_with_selection(
     # Delegate to the main send_message function
     return send_message(session_id, enhanced_message, state)
 
-
-# Streaming handled via WebSocket in main.py
